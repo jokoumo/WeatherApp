@@ -1,0 +1,139 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+
+# ==========================================
+# Android Studio / IntelliJ IDEA
+# ==========================================
+
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# ==========================================
+# Gradle
+# ==========================================
+
+.gradle/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local Gradle configuration
+gradle.properties.local
+
+# ==========================================
+# Android SDK / Local Configuration
+# ==========================================
+
+local.properties
+local.defaults.properties
+
+# ==========================================
+# Generated Android Files
+# ==========================================
+
+*.apk
+*.aab
+*.ap_
+*.aar
+*.dex
+*.class
+
+# Android generated files
+captures/
+.externalNativeBuild/
+.cxx/
+.cmake/
+.navigation/
+
+# ==========================================
+# Kotlin
+# ==========================================
+
+.kotlin/
+*.kotlin_module
+
+# ==========================================
+# Signing / Credentials
+# ==========================================
+
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Service credentials
+google-services.local.json
+secrets.properties
+*.env
+.env.*
+
+# ==========================================
+# Logs / Temporary Files
+# ==========================================
+
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+hs_err_pid*
+replay_pid*
+
+# ==========================================
+# Operating System
+# ==========================================
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+.directory
+.Trash-*/
+
+# ==========================================
+# Testing / Coverage
+# ==========================================
+
+coverage/
+test-results/
+*.exec
+*.ec
+*.hprof
+
+# ==========================================
+# AI Coding Agents
+# ==========================================
+
+# Temporary agent output
+.agent-cache/
+.agent-temp/
+.opencode/cache/
