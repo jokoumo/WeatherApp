@@ -30,6 +30,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,9 +42,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.weatherapp.R
 import com.example.weatherapp.data.repository.SnapshotSource
+import com.example.weatherapp.domain.HourlyWindowEntry
 import com.example.weatherapp.domain.WeatherFormatter
 import com.example.weatherapp.domain.model.DataLoadFailure
-import com.example.weatherapp.domain.model.HourlyWeather
 import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.ui.MainUiState
 import com.example.weatherapp.ui.WeatherUiState
@@ -57,9 +58,9 @@ import java.time.Instant
 import java.time.LocalDate
 
 /**
- * Main screen: current conditions, the hours of today, the next two days in detail and the
- * compact outlook for the remaining forecast days. Content is refreshed by pulling down or by
- * the toolbar button.
+ * Main screen: current conditions, the rolling 24 hour forecast, the next two days in detail
+ * and the compact outlook for the remaining forecast days. Content is refreshed by pulling
+ * down or by the toolbar button.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,7 +78,7 @@ fun DashboardScreen(
 ) {
     val weather = state.weather
     val snackbarHostState = remember { SnackbarHostState() }
-    var selectedHour by remember { mutableStateOf<HourlyWeather?>(null) }
+    var selectedEntry by remember { mutableStateOf<HourlyWindowEntry?>(null) }
     var showLocationSheet by remember { mutableStateOf(false) }
     val message = state.message
     val messageText = if (message != null) stringResource(message.messageRes()) else null
@@ -160,7 +161,7 @@ fun DashboardScreen(
                     else -> WeatherContent(
                         location = location,
                         weather = weather,
-                        onHourClick = { selectedHour = it },
+                        onHourClick = { selectedEntry = it },
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -168,8 +169,8 @@ fun DashboardScreen(
         }
     }
 
-    selectedHour?.let { hour ->
-        HourlyDetailSheet(hour = hour, onDismiss = { selectedHour = null })
+    selectedEntry?.let { entry ->
+        HourlyDetailSheet(entry = entry, onDismiss = { selectedEntry = null })
     }
 
     if (showLocationSheet) {
@@ -191,7 +192,7 @@ fun DashboardScreen(
 private fun WeatherContent(
     location: SavedLocation,
     weather: WeatherUiState,
-    onHourClick: (HourlyWeather) -> Unit,
+    onHourClick: (HourlyWindowEntry) -> Unit,
 ) {
     val zone = weather.timeZone
     val sections = weather.sections
@@ -201,7 +202,7 @@ private fun WeatherContent(
         current = weather.current,
         todayMin = weather.todayMin,
         todayMax = weather.todayMax,
-        dataInstant = weather.current?.instant ?: weather.fetchedAt ?: Instant.EPOCH,
+        dataInstant = weather.displayInstant,
         zoneId = zone ?: java.time.ZoneId.systemDefault(),
     )
 
@@ -237,11 +238,14 @@ private fun WeatherContent(
             title = stringResource(R.string.section_hourly),
             note = weather.today?.let { WeatherFormatter.weekdayAndDate(it) },
         )
-        HourlyForecast(
-            hours = sections.todayHours,
-            currentHourIndex = weather.hourlyAnchorIndex,
-            onItemClick = onHourClick,
-        )
+        // Keyed by the location so the strip begins again at the current hour after a switch,
+        // while a window that only advanced by one hour keeps the position the user scrolled to.
+        key(location.id) {
+            HourlyForecast(
+                entries = sections.hourlyEntries,
+                onItemClick = onHourClick,
+            )
+        }
     }
 
     if (sections.detailedDays.isNotEmpty()) {

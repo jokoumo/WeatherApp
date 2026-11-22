@@ -17,12 +17,16 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 
 /**
  * Converts Open-Meteo DTOs into domain models.
  *
  * Missing, null or unparsable values are skipped instead of being replaced with invented
  * data, so a partially available day is still rendered with the values that do exist.
+ * Hourly and current values are keyed by absolute [Instant]s taken from the API's
+ * `timeformat=unixtime` timestamps; local dates and clock times are only produced when the
+ * UI asks for them, in the time zone of the selected location.
  */
 class ForecastMapper(private val json: Json = NetworkModule.json) {
 
@@ -58,17 +62,21 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
             timeZone = zone,
             current = toCurrent(dto.current, zone),
             hourly = toHourly(dto.hourly, zone),
-            daily = toDaily(dto.daily),
+            daily = toDaily(dto.daily, zone, dto.utcOffsetSeconds),
         )
     }
 
+    /**
+     * Maps the current conditions block. [CurrentWeather.instant] stays null when the API did
+     * not send a usable observation timestamp: the measurement time is never replaced by the
+     * device time, because that would present an unknown observation as a fresh one.
+     */
     fun toCurrent(dto: CurrentDto?, zone: ZoneId): CurrentWeather? {
         if (dto == null) return null
         val temperature = dto.temperature ?: return null
-        val instant = parseDateTime(dto.time)?.atZone(zone)?.toInstant() ?: Instant.now()
         val isDay = toBoolean(dto.isDay)
         return CurrentWeather(
-            instant = instant,
+            instant = parseInstant(dto.time, zone),
             temperatureCelsius = temperature,
             apparentTemperatureCelsius = dto.apparentTemperature,
             weatherCode = dto.weatherCode,
@@ -87,11 +95,11 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
     fun toHourly(dto: HourlyDto?, zone: ZoneId): List<HourlyWeather> {
         if (dto == null || dto.time.isEmpty()) return emptyList()
         return dto.time.mapIndexedNotNull { index, rawTime ->
-            val localDateTime = parseDateTime(rawTime) ?: return@mapIndexedNotNull null
+            val instant = parseInstant(rawTime, zone) ?: return@mapIndexedNotNull null
             val code = dto.weatherCode.getOrNull(index)
             val isDay = toBoolean(dto.isDay.getOrNull(index))
             HourlyWeather(
-                instant = localDateTime.atZone(zone).toInstant(),
+                instant = instant,
                 timeZone = zone,
                 temperatureCelsius = dto.temperature.getOrNull(index),
                 apparentTemperatureCelsius = dto.apparentTemperature.getOrNull(index),
@@ -110,10 +118,17 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
         }
     }
 
-    fun toDaily(dto: DailyDto?): List<DailyWeather> {
+    /**
+     * Maps the daily block. Daily values are aggregated per calendar day in the location time
+     * zone, so they stay calendar dates rather than instants: the Unix stamp of a day is the
+     * start of that local day, converted back with the offset the API reported for the
+     * response. Falling back to the location zone would move a day by one date when a daylight
+     * saving transition lies inside the forecast horizon.
+     */
+    fun toDaily(dto: DailyDto?, zone: ZoneId, utcOffsetSeconds: Long? = null): List<DailyWeather> {
         if (dto == null || dto.time.isEmpty()) return emptyList()
         return dto.time.mapIndexedNotNull { index, rawDate ->
-            val date = parseDate(rawDate) ?: return@mapIndexedNotNull null
+            val date = parseLocalDate(rawDate, zone, utcOffsetSeconds) ?: return@mapIndexedNotNull null
             val code = dto.weatherCode.getOrNull(index)
             val sunshine = dto.sunshineDuration.getOrNull(index)
             val daylight = dto.daylightDuration.getOrNull(index)
@@ -160,14 +175,41 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
 private fun resolveZone(apiTimeZone: String?, locationTimeZone: String): ZoneId =
     zoneIdOrDefault(apiTimeZone, locationTimeZone)
 
-private fun parseDateTime(raw: String?): LocalDateTime? {
-    val value = raw?.trim().orEmpty()
-    if (value.isEmpty()) return null
-    // Open-Meteo uses "2026-11-22T14:00"; seconds may be present in some responses.
-    return runCatching { LocalDateTime.parse(value) }.getOrNull()
+/** Unix seconds that can plausibly be a weather forecast timestamp. */
+private const val MIN_PLAUSIBLE_EPOCH_SECOND = 1_000_000_000L // 2001-09-09
+private const val MAX_PLAUSIBLE_EPOCH_SECOND = 4_102_444_800L // 2100-01-01
+
+private fun String?.asEpochSecond(): Long? {
+    val value = this?.trim().orEmpty()
+    val seconds = value.toLongOrNull() ?: return null
+    return if (seconds in MIN_PLAUSIBLE_EPOCH_SECOND..MAX_PLAUSIBLE_EPOCH_SECOND) seconds else null
 }
 
-private fun parseDate(raw: String?): LocalDate? {
+/**
+ * Reads one `time` value as an absolute instant.
+ *
+ * The request uses `timeformat=unixtime`, so the normal form is a Unix timestamp in seconds.
+ * Naive ISO-8601 local date-times are still accepted because cache rows written by earlier app
+ * versions store that form; they are resolved in the location time zone, which is the best
+ * available interpretation for that legacy format.
+ */
+private fun parseInstant(raw: String?, zone: ZoneId): Instant? {
+    raw.asEpochSecond()?.let { return Instant.ofEpochSecond(it) }
+    val value = raw?.trim().orEmpty()
+    if (value.isEmpty()) return null
+    return runCatching { LocalDateTime.parse(value) }.getOrNull()?.atZone(zone)?.toInstant()
+}
+
+/** Reads one daily `time` value as a calendar date in the location time zone. */
+private fun parseLocalDate(raw: String?, zone: ZoneId, utcOffsetSeconds: Long?): LocalDate? {
+    raw.asEpochSecond()?.let { seconds ->
+        val instant = Instant.ofEpochSecond(seconds)
+        val offset = utcOffsetSeconds
+            ?.toInt()
+            ?.let { runCatching { ZoneOffset.ofTotalSeconds(it) }.getOrNull() }
+        return offset?.let { instant.atOffset(it).toLocalDate() }
+            ?: instant.atZone(zone).toLocalDate()
+    }
     val value = raw?.trim().orEmpty()
     if (value.isEmpty()) return null
     return runCatching { LocalDate.parse(value) }.getOrNull()

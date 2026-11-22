@@ -44,10 +44,143 @@ class ForecastMapperTest {
             current.instant,
         )
 
-        // The API sends naive local timestamps; 00:00 in Berlin is 23:00 UTC the day before.
+        // Timestamps arrive as Unix seconds; local midnight in Berlin is 23:00 UTC the day before.
         assertEquals(Instant.parse("2026-11-21T23:00:00Z"), snapshot.hourly.first().instant)
         assertEquals(7_200L, snapshot.daily.first().sunshineSeconds)
         assertEquals(29_400L, snapshot.daily.first().daylightSeconds)
+    }
+
+    @Test
+    fun `unix timestamps become absolute instants that do not depend on the display zone`() {
+        val hourly = HourlyDto(
+            time = listOf("1795302000", "1795305600"),
+            temperature = listOf(1.0, 2.0),
+        )
+
+        val inBerlin = mapper.toHourly(hourly, ZoneId.of("Europe/Berlin"))
+        val inTokyo = mapper.toHourly(hourly, ZoneId.of("Asia/Tokyo"))
+
+        assertEquals(
+            listOf(Instant.parse("2026-11-21T23:00:00Z"), Instant.parse("2026-11-22T00:00:00Z")),
+            inBerlin.map { it.instant },
+        )
+        assertEquals(inBerlin.map { it.instant }, inTokyo.map { it.instant })
+        // Only the rendered local time differs, and it stays one hour apart.
+        assertEquals("00:00", inBerlin.first().localDateTime.toLocalTime().toString())
+        assertEquals("08:00", inTokyo.first().localDateTime.toLocalTime().toString())
+    }
+
+    @Test
+    fun `a current block without a usable timestamp keeps its values but reports no time`() {
+        val berlin = ZoneId.of("Europe/Berlin")
+
+        val missing = requireNotNull(
+            mapper.toCurrent(CurrentDto(time = null, temperature = 6.4, weatherCode = 1), berlin),
+        )
+        assertNull(missing.instant)
+        assertEquals(6.4, missing.temperatureCelsius!!, 0.0001)
+        assertEquals(1, missing.weatherCode)
+
+        val unparsable = requireNotNull(
+            mapper.toCurrent(CurrentDto(time = "kein Datum", temperature = 6.4, weatherCode = 1), berlin),
+        )
+        assertNull(unparsable.instant)
+
+        // A plausible-looking but clearly wrong epoch value is treated as missing as well.
+        val implausible = requireNotNull(
+            mapper.toCurrent(CurrentDto(time = "120", temperature = 6.4, weatherCode = 1), berlin),
+        )
+        assertNull(implausible.instant)
+    }
+
+    @Test
+    fun `hourly entries with a missing or unparsable timestamp are dropped but the rest survives`() {
+        val hourly = mapper.toHourly(
+            HourlyDto(
+                time = listOf("1795302000", "", "not-a-time", "42", "1795305600"),
+                temperature = listOf(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+            ),
+            ZoneId.of("Europe/Berlin"),
+        )
+
+        assertEquals(
+            listOf(Instant.parse("2026-11-21T23:00:00Z"), Instant.parse("2026-11-22T00:00:00Z")),
+            hourly.map { it.instant },
+        )
+        assertEquals(listOf(1.0, 5.0), hourly.map { it.temperatureCelsius })
+    }
+
+    @Test
+    fun `daily dates use the offset reported by the response instead of a zone conversion`() {
+        val berlin = ZoneId.of("Europe/Berlin")
+        // The response labels 2026-11-22 and says its offset is +02:00, so the stamp below stands
+        // for local midnight on 22 November even though Berlin itself is at +01:00 that day.
+        val stamped = mapper.toDaily(
+            DailyDto(time = listOf("1795298400"), temperatureMax = listOf(7.0)),
+            berlin,
+            utcOffsetSeconds = 7200,
+        )
+        assertEquals(
+            java.time.LocalDate.of(2026, 11, 22),
+            stamped.single().date,
+        )
+
+        // Without a reported offset the location zone is used, which is still a real calendar day.
+        val withoutOffset = mapper.toDaily(
+            DailyDto(time = listOf("1795302000"), temperatureMax = listOf(7.0)),
+            berlin,
+            utcOffsetSeconds = null,
+        )
+        assertEquals(
+            java.time.LocalDate.of(2026, 11, 22),
+            withoutOffset.single().date,
+        )
+    }
+
+    @Test
+    fun `numeric time values of the unixtime format decode into the dto`() {
+        val json = """
+            {
+              "timezone": "Europe/Berlin",
+              "utc_offset_seconds": 3600,
+              "current": { "time": 1795305600, "temperature_2m": 5.5 },
+              "hourly": { "time": [1795302000, 1795305600], "temperature_2m": [1.0, 2.0] },
+              "daily": { "time": [1795302000], "temperature_2m_max": [7.0] }
+            }
+        """.trimIndent()
+
+        val decoded = requireNotNull(mapper.decodeCached(json))
+        val snapshot = mapper.toSnapshot(decoded, hamburg, fetchedAt)
+
+        assertEquals("1795305600", decoded.current?.time)
+        assertEquals(listOf("1795302000", "1795305600"), decoded.hourly?.time)
+        assertEquals(
+            listOf(Instant.parse("2026-11-21T23:00:00Z"), Instant.parse("2026-11-22T00:00:00Z")),
+            snapshot.hourly.map { it.instant },
+        )
+        assertEquals(Instant.parse("2026-11-22T00:00:00Z"), requireNotNull(snapshot.current).instant)
+        assertEquals(java.time.LocalDate.of(2026, 11, 22), snapshot.daily.single().date)
+    }
+
+    @Test
+    fun `a cached payload written with iso timestamps is still readable`() {
+        val json = """
+            {
+              "timezone": "Europe/Berlin",
+              "current": { "time": "2026-11-22T08:00", "temperature_2m": 5.5 },
+              "hourly": { "time": ["2026-11-22T08:00", "2026-11-22T09:00"], "temperature_2m": [1.0, 2.0] },
+              "daily": { "time": ["2026-11-22"], "temperature_2m_max": [7.0] }
+            }
+        """.trimIndent()
+
+        val snapshot = mapper.toSnapshot(requireNotNull(mapper.decodeCached(json)), hamburg, fetchedAt)
+
+        assertEquals(
+            listOf(Instant.parse("2026-11-22T07:00:00Z"), Instant.parse("2026-11-22T08:00:00Z")),
+            snapshot.hourly.map { it.instant },
+        )
+        assertEquals(Instant.parse("2026-11-22T07:00:00Z"), requireNotNull(snapshot.current).instant)
+        assertEquals(java.time.LocalDate.of(2026, 11, 22), snapshot.daily.single().date)
     }
 
     @Test
@@ -69,6 +202,7 @@ class ForecastMapperTest {
 
     @Test
     fun `shorter value arrays stay index aligned and missing values remain null`() {
+        // ISO strings are still accepted: rows written by older app versions stay readable.
         val dto = ForecastResponseDto(
             timezone = "Europe/Berlin",
             hourly = HourlyDto(
@@ -124,6 +258,7 @@ class ForecastMapperTest {
                 temperatureMax = listOf(null, 5.0, 6.0),
                 sunshineDuration = listOf(0.0, 100.0, 200.0),
             ),
+            ZoneId.of("Europe/Berlin"),
         )
         assertEquals(2, daily.size)
         assertNull(daily[0].maxTemperatureCelsius)

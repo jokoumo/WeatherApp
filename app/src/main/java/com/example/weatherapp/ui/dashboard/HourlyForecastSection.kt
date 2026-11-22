@@ -3,6 +3,7 @@ package com.example.weatherapp.ui.dashboard
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -20,13 +20,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.weatherapp.R
+import com.example.weatherapp.domain.HourlyDayRelation
+import com.example.weatherapp.domain.HourlyWindowEntry
 import com.example.weatherapp.domain.WeatherFormatter
 import com.example.weatherapp.domain.model.HourlyWeather
 import com.example.weatherapp.domain.model.WeatherCondition
@@ -34,19 +35,24 @@ import com.example.weatherapp.ui.components.DetailRow
 import com.example.weatherapp.ui.components.WeatherIcon
 import com.example.weatherapp.ui.weather.descriptionRes
 import com.example.weatherapp.ui.weather.iconRes
+import java.time.LocalDate
+
+/** Height reserved for the day label so all chips stay aligned. */
+private val dayLabelLineHeight = 18.dp
 
 /**
- * Horizontal strip with the hours of the current day. The strip is scrolled so that the
- * current hour is visible; tapping an hour opens the details sheet.
+ * Horizontal strip with the rolling hourly forecast: the current hour followed by the next
+ * 23 hourly forecast points. The strip starts at the current hour, highlights it and labels
+ * the day each group of hours belongs to, which keeps a window that crosses midnight readable.
+ * Tapping an hour opens the details sheet.
  */
 @Composable
 fun HourlyForecast(
-    hours: List<HourlyWeather>,
-    currentHourIndex: Int,
-    onItemClick: (HourlyWeather) -> Unit,
+    entries: List<HourlyWindowEntry>,
+    onItemClick: (HourlyWindowEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (hours.isEmpty()) {
+    if (entries.isEmpty()) {
         Text(
             text = stringResource(R.string.no_hourly_data),
             style = MaterialTheme.typography.bodyMedium,
@@ -55,23 +61,15 @@ fun HourlyForecast(
         )
         return
     }
-    val listState = rememberLazyListState()
-    LaunchedEffect(key1 = hours.first().instant, key2 = currentHourIndex) {
-        if (currentHourIndex > 0) {
-            listState.scrollToItem((currentHourIndex - 1).coerceAtLeast(0))
-        }
-    }
     LazyRow(
         modifier = modifier.fillMaxWidth(),
-        state = listState,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
+        contentPadding = PaddingValues(horizontal = 2.dp),
     ) {
-        itemsIndexed(items = hours, key = { _, hour -> hour.instant }) { index, hour ->
+        itemsIndexed(items = entries, key = { _, entry -> entry.hour.instant }) { _, entry ->
             HourChip(
-                hour = hour,
-                isCurrent = index == currentHourIndex,
-                onClick = { onItemClick(hour) },
+                entry = entry,
+                onClick = { onItemClick(entry) },
             )
         }
     }
@@ -79,10 +77,11 @@ fun HourlyForecast(
 
 @Composable
 private fun HourChip(
-    hour: HourlyWeather,
-    isCurrent: Boolean,
+    entry: HourlyWindowEntry,
     onClick: () -> Unit,
 ) {
+    val hour = entry.hour
+    val isCurrent = entry.isCurrent
     val shape = RoundedCornerShape(18.dp)
     Surface(
         modifier = Modifier
@@ -102,14 +101,36 @@ private fun HourChip(
                 .padding(horizontal = 8.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            if (entry.startsNewDay) {
+                Text(
+                    text = dayLabel(entry.dayRelation, hour.localDate),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (entry.dayRelation == HourlyDayRelation.TODAY) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    maxLines = 1,
+                )
+            } else {
+                Spacer(Modifier.height(dayLabelLineHeight))
+            }
+            Spacer(Modifier.height(2.dp))
             Text(
-                text = WeatherFormatter.clockTime(hour.localDateTime),
+                // The UTC offset is only shown for clock times that occur twice in the window,
+                // which happens when a daylight saving transition repeats a local hour.
+                text = if (entry.ambiguousClockTime) {
+                    WeatherFormatter.clockTimeWithOffset(hour.instant, hour.timeZone)
+                } else {
+                    WeatherFormatter.clockTime(hour.localDateTime)
+                },
                 style = MaterialTheme.typography.labelLarge,
                 color = if (isCurrent) {
                     MaterialTheme.colorScheme.onPrimaryContainer
                 } else {
                     MaterialTheme.colorScheme.onSurface
                 },
+                maxLines = 1,
             )
             Spacer(Modifier.height(6.dp))
             WeatherIcon(condition = hour.condition, size = 30.dp)
@@ -132,13 +153,22 @@ private fun HourChip(
     }
 }
 
+/** "Heute", "Morgen" or the weekday of a day that starts inside the hourly window. */
+@Composable
+private fun dayLabel(relation: HourlyDayRelation, date: LocalDate): String = when (relation) {
+    HourlyDayRelation.TODAY -> stringResource(R.string.hourly_day_today)
+    HourlyDayRelation.TOMORROW -> stringResource(R.string.tomorrow)
+    HourlyDayRelation.LATER -> WeatherFormatter.weekday(date)
+}
+
 /** Bottom sheet with every available value of a single forecast hour. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HourlyDetailSheet(
-    hour: HourlyWeather,
+    entry: HourlyWindowEntry,
     onDismiss: () -> Unit,
 ) {
+    val hour = entry.hour
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -168,7 +198,11 @@ fun HourlyDetailSheet(
                     )
                     Text(
                         text = WeatherFormatter.weekdayAndDate(hour.localDate) + " · " +
-                            WeatherFormatter.clockTime(hour.localDateTime),
+                            if (entry.ambiguousClockTime) {
+                                WeatherFormatter.clockTimeWithOffset(hour.instant, hour.timeZone)
+                            } else {
+                                WeatherFormatter.clockTime(hour.localDateTime)
+                            },
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,

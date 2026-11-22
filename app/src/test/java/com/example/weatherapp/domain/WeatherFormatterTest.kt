@@ -79,6 +79,32 @@ class WeatherFormatterTest {
     }
 
     @Test
+    fun `clock time with offset separates repeated hours and keeps fractional offsets`() {
+        // Both occurrences of 02:00 on the autumn transition day in Europe/Berlin.
+        assertEquals(
+            "02:00 +02",
+            formatter.clockTimeWithOffset(Instant.parse("2026-10-25T00:00:00Z"), berlin),
+        )
+        assertEquals(
+            "02:00 +01",
+            formatter.clockTimeWithOffset(Instant.parse("2026-10-25T01:00:00Z"), berlin),
+        )
+        // Repeated hour in a zone west of UTC, plus zones with non whole-hour offsets.
+        assertEquals(
+            "01:00 -04",
+            formatter.clockTimeWithOffset(Instant.parse("2026-11-01T05:00:00Z"), ZoneId.of("America/New_York")),
+        )
+        assertEquals(
+            "10:00 +05:30",
+            formatter.clockTimeWithOffset(Instant.parse("2026-11-22T04:30:00Z"), ZoneId.of("Asia/Kolkata")),
+        )
+        assertEquals(
+            "10:00 +05:45",
+            formatter.clockTimeWithOffset(Instant.parse("2026-11-22T04:15:00Z"), ZoneId.of("Asia/Kathmandu")),
+        )
+    }
+
+    @Test
     fun `dates are formatted in German`() {
         val date = LocalDate.of(2026, 11, 22)
         assertEquals("So., 22. November", formatter.weekdayAndDate(date))

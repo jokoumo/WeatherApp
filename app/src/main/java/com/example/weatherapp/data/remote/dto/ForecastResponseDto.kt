@@ -27,7 +27,7 @@ data class ForecastResponseDto(
 
 @Serializable
 data class CurrentDto(
-    val time: String? = null,
+    @Serializable(with = TimestampAsStringSerializer::class) val time: String? = null,
     @SerialName("temperature_2m") val temperature: Double? = null,
     @SerialName("relative_humidity_2m") val relativeHumidity: Int? = null,
     @SerialName("apparent_temperature") val apparentTemperature: Double? = null,
@@ -45,7 +45,7 @@ data class CurrentDto(
 
 @Serializable
 data class HourlyDto(
-    val time: List<String> = emptyList(),
+    @Serializable(with = TimestampListSerializer::class) val time: List<String> = emptyList(),
     @SerialName("temperature_2m") val temperature: List<Double?> = emptyList(),
     @SerialName("apparent_temperature") val apparentTemperature: List<Double?> = emptyList(),
     @SerialName("relative_humidity_2m") val relativeHumidity: List<Int?> = emptyList(),
@@ -63,7 +63,7 @@ data class HourlyDto(
 
 @Serializable
 data class DailyDto(
-    val time: List<String> = emptyList(),
+    @Serializable(with = TimestampListSerializer::class) val time: List<String> = emptyList(),
     @SerialName("weather_code") val weatherCode: List<Int?> = emptyList(),
     @SerialName("temperature_2m_max") val temperatureMax: List<Double?> = emptyList(),
     @SerialName("temperature_2m_min") val temperatureMin: List<Double?> = emptyList(),

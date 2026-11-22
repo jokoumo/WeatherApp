@@ -72,6 +72,69 @@ class WeatherRepositoryTest {
     }
 
     @Test
+    fun `cache from the previous local day is refreshed although it is still young`() = runTest {
+        // Downloaded at 23:50 local on 21 Nov; fifteen minutes later Berlin is on 22 November.
+        val dayChangeClock = MutableClock(Instant.parse("2026-11-21T23:05:00Z"))
+        cache.save(hamburg.id, Instant.parse("2026-11-21T22:50:00Z"), mapper.encode(sampleForecastDto()))
+
+        val result = WeatherRepository(api, cache, mapper, dayChangeClock).load(hamburg, forceRefresh = false)
+
+        assertEquals(1, api.callCount)
+        assertEquals(SnapshotSource.LIVE, result.source)
+        assertEquals(Instant.parse("2026-11-21T23:05:00Z"), cache.entries.getValue(hamburg.id).fetchedAt)
+    }
+
+    @Test
+    fun `cache whose hourly data no longer reaches the current hour is refreshed`() = runTest {
+        val expiredCoverage = sampleForecastDto(startOfToday = java.time.LocalDate.of(2026, 11, 20), days = 2)
+        cache.save(hamburg.id, now.minus(Duration.ofMinutes(2)), mapper.encode(expiredCoverage))
+
+        val result = repository.load(hamburg, forceRefresh = false)
+
+        assertEquals(1, api.callCount)
+        assertEquals(SnapshotSource.LIVE, result.source)
+    }
+
+    @Test
+    fun `cache dated in the future is treated as stale instead of never expiring`() = runTest {
+        cache.save(hamburg.id, now.plus(Duration.ofMinutes(10)), mapper.encode(sampleForecastDto()))
+
+        val result = repository.load(hamburg, forceRefresh = false)
+
+        assertEquals(1, api.callCount)
+        assertEquals(SnapshotSource.LIVE, result.source)
+    }
+
+    @Test
+    fun `a usable cache survives a failed refresh across a local day change`() = runTest {
+        val dayChangeClock = MutableClock(Instant.parse("2026-11-21T23:05:00Z"))
+        cache.save(hamburg.id, Instant.parse("2026-11-21T22:50:00Z"), mapper.encode(sampleForecastDto()))
+        api.thrown = UnknownHostException("api.open-meteo.com")
+
+        val result = WeatherRepository(api, cache, mapper, dayChangeClock).load(hamburg, forceRefresh = false)
+
+        assertEquals(SnapshotSource.CACHED, result.source)
+        assertEquals(DataLoadFailure.NETWORK, result.failure)
+        assertNotNull(result.snapshot)
+        // The usable entry is kept, not deleted.
+        assertEquals(1, cache.entries.size)
+    }
+
+    @Test
+    fun `the hourly window moving one hour ahead does not cause another request`() = runTest {
+        val first = repository.load(hamburg, forceRefresh = false)
+        assertEquals(1, api.callCount)
+
+        clock.advance(Duration.ofMinutes(25))
+        val second = repository.load(hamburg, forceRefresh = false)
+
+        assertEquals(1, api.callCount)
+        assertEquals(SnapshotSource.CACHED, second.source)
+        assertEquals(SnapshotSource.LIVE, first.source)
+        assertEquals(first.snapshot?.hourly?.map { it.instant }, second.snapshot?.hourly?.map { it.instant })
+    }
+
+    @Test
     fun `pull to refresh bypasses even a fresh cache`() = runTest {
         seedCache(Duration.ofSeconds(1))
         val result = repository.load(hamburg, forceRefresh = true)

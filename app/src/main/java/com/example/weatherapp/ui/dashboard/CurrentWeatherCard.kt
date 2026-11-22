@@ -39,6 +39,9 @@ import java.time.ZoneId
 /**
  * Hero card with the current conditions. The gradient reflects the weather and whether it is
  * day or night at the selected location; white text keeps contrast in both app themes.
+ *
+ * [dataInstant] is null when the API did not report a usable observation time. The card then
+ * states that instead of showing a time that was never measured.
  */
 @Composable
 fun CurrentWeatherCard(
@@ -46,7 +49,7 @@ fun CurrentWeatherCard(
     current: CurrentWeather?,
     todayMin: Double?,
     todayMax: Double?,
-    dataInstant: Instant,
+    dataInstant: Instant?,
     zoneId: ZoneId,
     modifier: Modifier = Modifier,
 ) {
@@ -86,7 +89,8 @@ fun CurrentWeatherCard(
                         )
                     }
                     Text(
-                        text = WeatherFormatter.fullDateTime(dataInstant, zoneId),
+                        text = dataInstant?.let { WeatherFormatter.fullDateTime(it, zoneId) }
+                            ?: stringResource(R.string.observation_time_unknown),
                         style = MaterialTheme.typography.labelMedium,
                         color = OnHeaderMuted,
                     )

@@ -91,9 +91,72 @@ class MainViewModelTest {
         assertEquals(SnapshotSource.LIVE, state.weather.snapshotSource)
         assertNull(state.weather.failure)
         assertEquals(1, forecastApi.callCount)
-        assertEquals(24, state.weather.sections.todayHours.size)
-        assertEquals(12, state.weather.hourlyAnchorIndex)
+        assertEquals(24, state.weather.sections.hourlyEntries.size)
+        assertEquals(now, state.weather.sections.hourlyEntries.first().hour.instant)
+        assertTrue(state.weather.sections.hourlyEntries.first().isCurrent)
+        assertEquals(now, state.weather.displayInstant)
         assertEquals(now, state.weather.fetchedAt)
+    }
+
+    @Test
+    fun `the window advances on the hourly tick without another request`() = withViewModel {
+        advanceUntilIdle()
+        assertEquals(1, forecastApi.callCount)
+
+        clock.advance(Duration.ofMinutes(61)) // past the cache lifetime on purpose
+        viewModel.onClockTick()
+
+        val entries = viewModel.uiState.value.weather.sections.hourlyEntries
+        assertEquals(24, entries.size)
+        assertEquals(now.plus(Duration.ofHours(1)), entries.first().hour.instant)
+        assertTrue(entries.first().isCurrent)
+        assertEquals(24, viewModel.uiState.value.weather.sections.todayHours.size)
+        // Moving the window forward never triggers a request by itself.
+        assertEquals(1, forecastApi.callCount)
+        assertEquals(SnapshotSource.LIVE, viewModel.uiState.value.weather.snapshotSource)
+    }
+
+    @Test
+    fun `a snapshot from the previous local day is refreshed once when the day changes`() = withViewModel {
+        advanceUntilIdle()
+        assertEquals(1, forecastApi.callCount)
+
+        // 01:05 local on 23 November; the cached download belongs to 22 November.
+        clock.advance(Duration.ofHours(13).plusMinutes(5))
+        val before = viewModel.uiState.value.weather
+        assertTrue(before.hasData)
+        assertEquals(2026, before.today?.year ?: 0)
+
+        viewModel.onClockTick()
+        advanceUntilIdle()
+
+        assertEquals(2, forecastApi.callCount)
+        val after = viewModel.uiState.value.weather
+        assertTrue(after.hasData)
+        assertEquals(now.plus(Duration.ofHours(13)), after.sections.hourlyEntries.first().hour.instant)
+
+        // A further tick on the same local day does not request again.
+        clock.advance(Duration.ofHours(1))
+        viewModel.onClockTick()
+        advanceUntilIdle()
+        assertEquals(2, forecastApi.callCount)
+        val latest = viewModel.uiState.value.weather
+        assertEquals(now.plus(Duration.ofHours(14)), latest.sections.hourlyEntries.first().hour.instant)
+    }
+
+    @Test
+    fun `returning to the foreground after midnight shows the new window`() = withViewModel {
+        advanceUntilIdle()
+        clock.advance(Duration.ofHours(13).plusMinutes(5))
+
+        viewModel.onForeground()
+        advanceUntilIdle()
+
+        val entries = viewModel.uiState.value.weather.sections.hourlyEntries
+        assertEquals(2, forecastApi.callCount)
+        assertEquals(24, entries.size)
+        assertEquals(now.plus(Duration.ofHours(13)), entries.first().hour.instant)
+        assertTrue(entries.first().isCurrent)
     }
 
     @Test

@@ -9,7 +9,7 @@ import com.example.weatherapp.data.repository.WeatherRepository
 import com.example.weatherapp.data.repository.LocationRepository
 import com.example.weatherapp.domain.CachePolicy
 import com.example.weatherapp.domain.buildForecastSections
-import com.example.weatherapp.domain.currentHourIndex
+import com.example.weatherapp.domain.zoneIdOrDefault
 import com.example.weatherapp.domain.model.CurrentWeather
 import com.example.weatherapp.domain.model.DataLoadFailure
 import com.example.weatherapp.domain.model.LocationSettings
@@ -47,7 +47,6 @@ data class WeatherUiState(
     val location: SavedLocation? = null,
     val current: CurrentWeather? = null,
     val sections: ForecastSections = ForecastSections.EMPTY,
-    val hourlyAnchorIndex: Int = 0,
     val snapshotSource: SnapshotSource? = null,
     val fetchedAt: Instant? = null,
     val timeZone: ZoneId? = null,
@@ -58,7 +57,7 @@ data class WeatherUiState(
 ) {
     val hasData: Boolean
         get() = current != null ||
-            sections.todayHours.isNotEmpty() ||
+            sections.hourlyEntries.isNotEmpty() ||
             sections.detailedDays.isNotEmpty() ||
             sections.extendedDays.isNotEmpty()
 
@@ -71,6 +70,20 @@ data class WeatherUiState(
         get() = sections.extendedDays.mapNotNull { it.minTemperatureCelsius }.minOrNull()
     val extendedMax: Double?
         get() = sections.extendedDays.mapNotNull { it.maxTemperatureCelsius }.maxOrNull()
+
+    /**
+     * Timestamp shown on the hero card, or null when no honest timestamp exists.
+     *
+     * The observation time reported by the API is preferred. With no current weather block at
+     * all the retrieval time of the snapshot is shown, because that is what actually happened;
+     * when a current block exists but its timestamp is missing or invalid nothing is shown, so
+     * an unknown observation time is never disguised as a known one.
+     */
+    val displayInstant: Instant?
+        get() = when {
+            current == null -> fetchedAt
+            else -> current.instant
+        }
 
     /** True when data is shown but the last refresh failed, so it may be outdated. */
     val isShowingStaleData: Boolean
@@ -105,7 +118,9 @@ data class MainUiState(
  * Coordinates location selection, forecast loading and search for the whole app.
  *
  * Only one load runs at a time: switching locations cancels the previous load, and results
- * are dropped when the user has already moved on to another location.
+ * are dropped when the user has already moved on to another location. The last snapshot is
+ * kept so that the rolling hourly window can be rebuilt from cached data whenever the clock
+ * moves into the next hour, without requesting anything from the network.
  */
 class MainViewModel(
     private val locationRepository: LocationRepository,
@@ -119,6 +134,12 @@ class MainViewModel(
     private var loadJob: Job? = null
     private var searchJob: Job? = null
 
+    /** Snapshot currently on screen, used to rebuild the hourly window without loading again. */
+    private var displayedSnapshot: WeatherSnapshot? = null
+
+    /** Local date for which a day-change refresh was already attempted. */
+    private var dayChangeRefreshedOn: LocalDate? = null
+
     init {
         viewModelScope.launch {
             locationRepository.settings.collect { settings ->
@@ -127,6 +148,7 @@ class MainViewModel(
                 when {
                     selected == null -> {
                         loadJob?.cancel()
+                        displayedSnapshot = null
                         _uiState.update { it.copy(weather = WeatherUiState()) }
                     }
 
@@ -151,15 +173,51 @@ class MainViewModel(
     }
 
     /**
+     * Rebuilds the visible sections from the last snapshot without touching the network, so the
+     * rolling hourly window follows the clock as hours pass. Called when the next local hour
+     * begins and whenever the app comes back to the foreground; a window that simply moved on
+     * by one hour never causes a request.
+     *
+     * A cached snapshot whose local calendar day has passed is refreshed in the background,
+     * once per day, while the current data stays on screen.
+     */
+    fun onClockTick() {
+        val snapshot = displayedSnapshot ?: return
+        val stateLocation = _uiState.value.weather.location ?: return
+        if (stateLocation.id != snapshot.locationId) return
+        val now = timeProvider()
+        _uiState.update { state ->
+            val weather = state.weather
+            if (weather.location?.id != snapshot.locationId) {
+                state
+            } else {
+                state.copy(
+                    weather = render(
+                        location = weather.location ?: stateLocation,
+                        snapshot = snapshot,
+                        source = weather.snapshotSource,
+                        failure = weather.failure,
+                        refreshing = weather.isRefreshing,
+                    ),
+                )
+            }
+        }
+        refreshAfterLocalDayChange(snapshot, now)
+    }
+
+    /**
      * Called when the app comes back to the foreground. Stale data is refreshed silently
-     * while the currently displayed values stay on screen.
+     * while the currently displayed values stay on screen. The window is rebuilt first, which
+     * also covers a device clock that moved while the app was in the background.
      */
     fun onForeground() {
+        onClockTick()
         val weather = _uiState.value.weather
         val location = weather.location ?: return
         val fetchedAt = weather.fetchedAt ?: return
         if (weather.isRefreshing) return
-        if (CachePolicy.isStale(fetchedAt, timeProvider())) {
+        val zone = weather.timeZone ?: zoneIdOrDefault(location.timeZoneId, SavedLocation.DEFAULT_TIME_ZONE_ID)
+        if (CachePolicy.isStale(fetchedAt, timeProvider(), zone)) {
             loadWeather(location, forceRefresh = true)
         }
     }
@@ -275,6 +333,23 @@ class MainViewModel(
         _uiState.value.weather.location?.id == location.id &&
             _uiState.value.settings.resolveSelectedLocation()?.id == location.id
 
+    /**
+     * Silently refreshes a snapshot that stopped being valid because the location's calendar day
+     * changed. Bounded to one attempt per local date, so a failing network cannot turn the
+     * hourly tick into a request per hour. The ordinary cache lifetime is deliberately not a
+     * trigger here: a window that only moved on by one hour must never cause a request, and the
+     * regular refresh paths (foreground, pull to refresh, button) keep handling the cache age.
+     */
+    private fun refreshAfterLocalDayChange(snapshot: WeatherSnapshot, now: Instant) {
+        val today = now.atZone(snapshot.timeZone).toLocalDate()
+        if (dayChangeRefreshedOn == today) return
+        if (snapshot.fetchedAt.atZone(snapshot.timeZone).toLocalDate() == today) return
+        if (_uiState.value.weather.isRefreshing) return
+        val location = _uiState.value.weather.location ?: return
+        dayChangeRefreshedOn = today
+        loadWeather(location, forceRefresh = false)
+    }
+
     private fun render(
         location: SavedLocation,
         snapshot: WeatherSnapshot?,
@@ -283,6 +358,7 @@ class MainViewModel(
         refreshing: Boolean,
     ): WeatherUiState {
         if (snapshot == null) {
+            displayedSnapshot = null
             return WeatherUiState(
                 location = location,
                 isRefreshing = refreshing,
@@ -290,13 +366,13 @@ class MainViewModel(
                 failure = failure,
             )
         }
+        displayedSnapshot = snapshot
         val now = timeProvider()
         val sections = buildForecastSections(snapshot, now)
         return WeatherUiState(
             location = location,
             current = snapshot.current,
             sections = sections,
-            hourlyAnchorIndex = currentHourIndex(sections.todayHours, now),
             snapshotSource = source,
             fetchedAt = snapshot.fetchedAt,
             timeZone = snapshot.timeZone,

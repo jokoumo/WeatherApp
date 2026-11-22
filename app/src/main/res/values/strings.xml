@@ -3,7 +3,8 @@
     <string name="app_name">Wetter</string>
 
     <!-- Dashboard sections -->
-    <string name="section_hourly">Heute stündlich</string>
+    <string name="section_hourly">Nächste 24 Stunden</string>
+    <string name="hourly_day_today">Heute</string>
     <string name="section_daily">Nächste zwei Tage</string>
     <string name="section_extended">Ausblick</string>
     <string name="extended_hint">Ab Tag 4 wird die Vorhersage unsicherer. Die Werte dienen als Tendenz.</string>
@@ -69,8 +70,9 @@
     <string name="last_updated">Zuletzt aktualisiert: %1$s</string>
     <string name="data_may_be_outdated">Diese Daten können veraltet sein.</string>
     <string name="offline_notice">Keine Verbindung zum Wetterdienst. Angezeigt werden gespeicherte Daten.</string>
-    <string name="no_hourly_data">Für diesen Tag sind keine Stundendaten verfügbar.</string>
+    <string name="no_hourly_data">Für den aktuellen Zeitraum sind keine Stundendaten verfügbar.</string>
     <string name="no_daily_data">Keine Tagesvorhersage verfügbar.</string>
+    <string name="observation_time_unknown">Messzeitpunkt nicht verfügbar</string>
     <string name="error_no_data">Zurzeit sind keine Wetterdaten verfügbar.</string>
 
     <string name="error_network">Es besteht keine Internetverbindung. Bitte Verbindung prüfen und erneut versuchen.</string>

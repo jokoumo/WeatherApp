@@ -78,6 +78,25 @@ object WeatherFormatter {
 
     fun clockTime(localDateTime: LocalDateTime): String = timeFormatter.format(localDateTime)
 
+    /**
+     * Clock time with a compact UTC offset, for example "02:00 +02". Used when one clock time
+     * occurs twice in the hourly window because a daylight saving transition repeated a local
+     * hour, so both occurrences stay distinguishable. Offsets that are not whole hours keep
+     * their minutes, for example "+05:30".
+     */
+    fun clockTimeWithOffset(instant: Instant, zoneId: ZoneId): String {
+        val minutes = zoneId.rules.getOffset(instant).totalSeconds / 60
+        val sign = if (minutes >= 0) "+" else "-"
+        val absolute = kotlin.math.abs(minutes)
+        val hours = (absolute / 60).toString().padStart(2, '0')
+        val offset = if (absolute % 60 == 0) {
+            "$sign$hours"
+        } else {
+            "$sign$hours:${(absolute % 60).toString().padStart(2, '0')}"
+        }
+        return "${timeFormatter.format(instant.atZone(zoneId))} $offset"
+    }
+
     /** "Donnerstag, 22. November" */
     fun weekdayAndDate(date: LocalDate): String = weekdayDateFormatter.format(date)
 

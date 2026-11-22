@@ -61,6 +61,11 @@ class WeatherRepository(
     /**
      * Returns forecast data for [location].
      *
+     * A cached snapshot is served without a network call only while it is fresh: within the TTL,
+     * downloaded on the current calendar day in the location time zone and still covering the
+     * current hour. Stale cache entries are never deleted; they stay visible while a refresh
+     * runs and are the fallback when the refresh fails.
+     *
      * @param forceRefresh bypasses the cache freshness check, for example on pull to refresh.
      */
     suspend fun load(
@@ -68,7 +73,7 @@ class WeatherRepository(
         forceRefresh: Boolean = false,
     ): WeatherLoadResult {
         val cached = loadCached(location)
-        if (cached != null && !forceRefresh && CachePolicy.isFresh(cached.fetchedAt, now)) {
+        if (cached != null && !forceRefresh && isFresh(cached, now)) {
             return WeatherLoadResult(snapshot = cached, source = SnapshotSource.CACHED)
         }
 
@@ -93,6 +98,11 @@ class WeatherRepository(
             }
         }
     }
+
+    /** Cached data that is young enough, from today and still covers the current hour. */
+    private fun isFresh(snapshot: WeatherSnapshot, now: Instant): Boolean =
+        CachePolicy.isFresh(snapshot.fetchedAt, now, snapshot.timeZone) &&
+            CachePolicy.hasHourlyCoverage(snapshot, now)
 
     private suspend fun fetch(location: SavedLocation): FetchOutcome {
         val requestedAt = now

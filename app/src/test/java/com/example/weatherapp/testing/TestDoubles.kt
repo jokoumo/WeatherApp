@@ -13,6 +13,7 @@ import com.example.weatherapp.data.remote.dto.GeocodingResponseDto
 import com.example.weatherapp.data.remote.dto.HourlyDto
 import com.example.weatherapp.domain.model.LocationSettings
 import com.example.weatherapp.domain.model.SavedLocation
+import com.example.weatherapp.domain.zoneIdOrDefault
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -128,6 +129,7 @@ class FakeForecastApi(
         daily: String,
         timezone: String,
         forecastDays: Int,
+        timeformat: String,
         temperatureUnit: String,
         windSpeedUnit: String,
         precipitationUnit: String,
@@ -205,13 +207,20 @@ class FakeSettingsStore(
 
 /**
  * Builds a realistic forecast payload with [days] full local days starting at
- * [startOfToday]; the shape matches the Open-Meteo response for the requested variables.
+ * [startOfToday]; the shape matches the Open-Meteo response for the requested variables,
+ * including `timeformat=unixtime`: every `time` value is a Unix timestamp in seconds.
  */
 fun sampleForecastDto(
     timeZone: String? = "Europe/Berlin",
     startOfToday: LocalDate = LocalDate.of(2026, 11, 22),
     days: Int = 16,
 ): ForecastResponseDto {
+    val zone = zoneIdOrDefault(timeZone, "Europe/Berlin")
+    val utcOffsetSeconds = zone.rules
+        .getOffset(startOfToday.atStartOfDay(zone).toInstant())
+        .totalSeconds
+        .toLong()
+
     val hourlyTimes = mutableListOf<String>()
     val temperatures = mutableListOf<Double?>()
     val apparent = mutableListOf<Double?>()
@@ -229,7 +238,11 @@ fun sampleForecastDto(
     for (day in 0 until days) {
         for (hour in 0..23) {
             val index = day * 24 + hour
-            hourlyTimes += startOfToday.plusDays(day.toLong()).atTime(hour, 0).toString()
+            hourlyTimes += startOfToday.plusDays(day.toLong())
+                .atTime(hour, 0)
+                .atZone(zone)
+                .toEpochSecond()
+                .toString()
             temperatures += 5.0 + (index % 24) * 0.1
             apparent += 3.0 + (index % 24) * 0.1
             humidity += 60 + (index % 24)
@@ -245,17 +258,22 @@ fun sampleForecastDto(
         }
     }
 
-    val dailyTimes = (0 until days).map { day -> startOfToday.plusDays(day.toLong()).toString() }
+    val dailyTimes = (0 until days).map { day ->
+        startOfToday.plusDays(day.toLong())
+            .atStartOfDay(zone)
+            .toEpochSecond()
+            .toString()
+    }
 
     return ForecastResponseDto(
         latitude = 53.55,
         longitude = 9.99,
         elevation = 12.0,
         timezone = timeZone,
-        utcOffsetSeconds = 3600,
+        utcOffsetSeconds = utcOffsetSeconds,
         timezoneAbbreviation = "CET",
         current = CurrentDto(
-            time = startOfToday.atTime(12, 0).toString(),
+            time = startOfToday.atTime(12, 0).atZone(zone).toEpochSecond().toString(),
             temperature = 6.4,
             relativeHumidity = 81,
             apparentTemperature = 3.9,

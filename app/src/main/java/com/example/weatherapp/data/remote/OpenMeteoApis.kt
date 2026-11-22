@@ -18,6 +18,7 @@ interface OpenMeteoForecastApi {
         @Query("daily") daily: String,
         @Query("timezone") timezone: String = "auto",
         @Query("forecast_days") forecastDays: Int = FORECAST_DAYS,
+        @Query("timeformat") timeformat: String = TIME_FORMAT,
         @Query("temperature_unit") temperatureUnit: String = "celsius",
         @Query("wind_speed_unit") windSpeedUnit: String = "kmh",
         @Query("precipitation_unit") precipitationUnit: String = "mm",
@@ -26,6 +27,14 @@ interface OpenMeteoForecastApi {
     companion object {
         /** Full horizon of the standard forecast API: today plus 15 days. */
         const val FORECAST_DAYS = 16
+
+        /**
+         * Absolute Unix timestamps instead of naive local date-times. Hourly points then carry
+         * unambiguous instants, so a daylight saving transition can never collapse two different
+         * hours into one entry. Daily timestamps are converted back to calendar dates with the
+         * offset reported by the API (see `ForecastMapper`).
+         */
+        const val TIME_FORMAT = "unixtime"
 
         val CURRENT_VARIABLES = listOf(
             "temperature_2m",

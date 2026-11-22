@@ -12,6 +12,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.example.weatherapp.R
 import com.example.weatherapp.domain.WeatherFormatter
 import com.example.weatherapp.domain.ForecastSections
+import com.example.weatherapp.domain.buildForecastSections
 import com.example.weatherapp.domain.model.CurrentWeather
 import com.example.weatherapp.domain.model.DailyWeather
 import com.example.weatherapp.domain.model.DataLoadFailure
@@ -19,6 +20,7 @@ import com.example.weatherapp.domain.model.HourlyWeather
 import com.example.weatherapp.domain.model.LocationSettings
 import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.domain.model.WeatherCondition
+import com.example.weatherapp.domain.model.WeatherSnapshot
 import com.example.weatherapp.ui.dashboard.DashboardScreen
 import com.example.weatherapp.ui.theme.WeatherAppTheme
 import org.junit.Assert.assertTrue
@@ -63,8 +65,8 @@ class DashboardScreenTest {
         timeZoneId = "Europe/Berlin",
     )
 
-    private fun hour(hourOfDay: Int): HourlyWeather = HourlyWeather(
-        instant = today.atTime(hourOfDay, 0).atZone(zone).toInstant(),
+    private fun hour(date: LocalDate, hourOfDay: Int): HourlyWeather = HourlyWeather(
+        instant = date.atTime(hourOfDay, 0).atZone(zone).toInstant(),
         timeZone = zone,
         temperatureCelsius = 4.0 + hourOfDay * 0.1,
         apparentTemperatureCelsius = 2.0 + hourOfDay * 0.1,
@@ -95,15 +97,28 @@ class DashboardScreenTest {
         daylightSeconds = 29_400,
     )
 
-    private fun sections(): ForecastSections = ForecastSections(
-        todayHours = (6..21).map { hour(it) },
-        detailedDays = listOf(day(1), day(2)),
-        extendedDays = (3..15).map { day(it) },
+    /**
+     * The instant the hourly window is built for: the same instant the current conditions were
+     * observed at, which is 12:00 local in Berlin.
+     */
+    private val reference: Instant = fetchedAt
+
+    /** Hourly data for today and tomorrow plus a full 16 day outlook. */
+    private fun snapshot(): WeatherSnapshot = WeatherSnapshot(
+        locationId = hamburg.id,
+        fetchedAt = fetchedAt,
+        timeZone = zone,
+        current = null,
+        hourly = (0..23).map { hour(today, it) } + (0..23).map { hour(today.plusDays(1), it) },
+        daily = (0..15).map { day(it) },
     )
+
+    private fun sections(): ForecastSections = buildForecastSections(snapshot(), reference)
 
     private fun stateWith(
         failure: DataLoadFailure? = null,
         withData: Boolean = true,
+        observationInstant: Instant? = fetchedAt,
     ): MainUiState = MainUiState(
         settingsLoaded = true,
         settings = LocationSettings(
@@ -115,7 +130,7 @@ class DashboardScreenTest {
             location = hamburg,
             current = if (withData) {
                 CurrentWeather(
-                    instant = fetchedAt,
+                    instant = observationInstant,
                     temperatureCelsius = 6.4,
                     apparentTemperatureCelsius = 3.9,
                     weatherCode = 3,
@@ -133,8 +148,6 @@ class DashboardScreenTest {
                 null
             },
             sections = if (withData) sections() else ForecastSections.EMPTY,
-            // Anchor 0 keeps the strip unscrolled, so the first chips are laid out and clickable.
-            hourlyAnchorIndex = 0,
             snapshotSource = if (failure == null) {
                 com.example.weatherapp.data.repository.SnapshotSource.LIVE
             } else {
@@ -186,15 +199,39 @@ class DashboardScreenTest {
     }
 
     @Test
+    fun hourlyStripStartsAtTheCurrentHourAndLabelsItsDay() {
+        render(stateWith())
+
+        // The window begins at the current hour, so the first chip shows 12:00 with its day label.
+        composeRule.onNodeWithText(WeatherFormatter.clockTime(today.atTime(12, 0))).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.hourly_day_today)).assertIsDisplayed()
+    }
+
+    @Test
     fun tappingAnHourOpensTheDetailSheet() {
         render(stateWith())
 
-        composeRule.onNodeWithText(WeatherFormatter.clockTime(today.atTime(6, 0))).performClick()
+        composeRule.onNodeWithText(WeatherFormatter.clockTime(today.atTime(12, 0))).performClick()
 
         composeRule.onNodeWithText(context.getString(R.string.hourly_details_title)).assertIsDisplayed()
         // "Windrichtung" only exists in the sheet, while labels like "Luftdruck" are also on the card.
         composeRule.onNodeWithText(context.getString(R.string.detail_wind_direction)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.detail_temperature)).assertIsDisplayed()
+        composeRule.onNodeWithText(
+            WeatherFormatter.weekdayAndDate(today) + " · " + WeatherFormatter.clockTime(today.atTime(12, 0)),
+            substring = true,
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun aCurrentWeatherWithoutTimestampIsLabelledAndNotSilentlyTimed() {
+        render(stateWith(observationInstant = null))
+
+        composeRule.onNodeWithText(context.getString(R.string.observation_time_unknown)).assertIsDisplayed()
+        // No timestamp may be implied by the download time on the card.
+        composeRule.onNodeWithText(WeatherFormatter.fullDateTime(fetchedAt, zone)).assertDoesNotExist()
+        // The rest of the dashboard keeps working.
+        composeRule.onNodeWithText(WeatherFormatter.clockTime(today.atTime(12, 0))).assertIsDisplayed()
     }
 
     @Test

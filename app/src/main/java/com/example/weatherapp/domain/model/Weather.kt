@@ -4,9 +4,15 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-/** Measured or modelled conditions for the moment the forecast was requested. */
+/**
+ * Measured or modelled conditions for the moment the forecast was requested.
+ *
+ * [instant] is the observation time reported by the API. It is null when the response did not
+ * contain a usable timestamp; nothing is substituted for it, so the UI can say so instead of
+ * showing a time that was never reported.
+ */
 data class CurrentWeather(
-    val instant: Instant,
+    val instant: Instant?,
     val temperatureCelsius: Double,
     val apparentTemperatureCelsius: Double?,
     val weatherCode: Int?,
@@ -21,7 +27,13 @@ data class CurrentWeather(
     val isDay: Boolean?,
 )
 
-/** One forecast value for a single hour of the local day. */
+/**
+ * One forecast value for a single hourly interval.
+ *
+ * [instant] is the absolute start of the interval and the unique key of the entry: two hours
+ * that share a local clock time because a daylight saving transition repeated it stay distinct.
+ * [timeZone] is only used to derive the local date and clock time shown to the user.
+ */
 data class HourlyWeather(
     val instant: Instant,
     val timeZone: ZoneId,
