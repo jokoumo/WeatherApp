@@ -62,15 +62,37 @@ class LocationRepository(
         }
     }
 
-    /** Makes [location] the home location and selects it. */
+    /**
+     * Makes [location] the home location and selects it.
+     *
+     * The previous home location is never dropped: when [location] was a favorite, the two swap,
+     * so the previous home takes over the exact slot the new home held in the favorites list.
+     * A copy of [location] that survived in an older persisted state is removed from the other
+     * slot, which keeps the number of distinct saved locations unchanged and never duplicates a
+     * place. Identity is decided by [isSamePlaceAs], not by the display name.
+     */
     suspend fun setHomeLocation(location: SavedLocation): LocationSettings = mutate { current ->
-        val withoutDuplicates = current.favorites.filterNot { it.isSamePlaceAs(location) }
-        val updated = current.copy(
+        val previousHome = current.homeLocation
+        val favoriteIndex = current.favorites.indexOfFirst { it.isSamePlaceAs(location) }
+        // Drop the new home from the favorites, and any stale copy of the old home that a
+        // previous version of the persisted state may have left behind.
+        val favorites = current.favorites
+            .filterNot { it.isSamePlaceAs(location) }
+            .filterNot { other -> previousHome != null && other.isSamePlaceAs(previousHome) }
+            .toMutableList()
+        if (previousHome != null && !previousHome.isSamePlaceAs(location)) {
+            // The old home moves into the slot the new home just left, or to the end when the
+            // new home was not a favorite before.
+            val insertAt = if (favoriteIndex >= 0) favoriteIndex.coerceAtMost(favorites.size) else favorites.size
+            favorites.add(insertAt, previousHome)
+        }
+        current.copy(
             homeLocation = location,
-            favorites = withoutDuplicates,
+            favorites = favorites,
+            // This is an explicit user action, so the new home location is what the dashboard has
+            // to show afterwards - [keepValidSelection] must not restore the old selection here.
             selectedLocationId = location.id,
         )
-        updated.copy(selectedLocationId = keepValidSelection(current, updated))
     }
 
     /**
@@ -130,11 +152,19 @@ class LocationRepository(
         }
     }
 
+    /**
+     * Applies [transform] to the latest persisted state under [mutationLock] and persists the
+     * result. A transform that changes nothing (rapid repeated taps, an unknown id) does not
+     * write to storage at all.
+     */
     private suspend fun mutate(
         transform: (LocationSettings) -> LocationSettings,
     ): LocationSettings = mutationLock.withLock {
-        val updated = transform(settingsStore.settings.first())
-        settingsStore.save(updated)
+        val current = settingsStore.settings.first()
+        val updated = transform(current)
+        if (updated != current) {
+            settingsStore.save(updated)
+        }
         updated
     }
 

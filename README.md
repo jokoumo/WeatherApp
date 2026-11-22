@@ -15,7 +15,7 @@ All user-visible text is German; source code, comments and this documentation ar
 | Hourly (rolling) | Horizontal strip with a rolling 24-hour window: it starts at the hourly interval that **contains** the current time, highlights it, labels every day the window touches ("Heute", "Morgen", weekday) and moves on its own when the hour changes. If that current hour is missing from the response, the earliest later hour starts the window; an already elapsed hour is never used as the start, and if the payload only contains elapsed hours the strip shows the unavailable-data note instead of outdated values. The window covers the current interval plus the following 23 hourly intervals by absolute timestamp, so a gap shortens the list rather than stretching the horizon. Tapping an hour opens a "Stundendetails" bottom sheet with all values for that hour. |
 | Days 1–2 | Two detailed cards ("Morgen", "Übermorgen") with condition, precipitation probability/amount, wind, gusts, sunshine and day length. |
 | Days 3–15 | Compact list ("Ausblick") with condition icon, min/max temperature and a temperature range bar; up to the 16-day forecast horizon of the API. |
-| Locations | A home location plus favourites, managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the saved locations live in a list that scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. A circular floating button in the bottom-left corner (above the navigation bar, hidden while the keyboard is open) returns to the dashboard; the system back button first closes the suggestions. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. Home is a single slot: promoting a favourite to home replaces the previous home entry. The last displayed location is restored on the next start. |
+| Locations | A home location plus favourites, managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the saved locations live in a list that scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. A circular floating button in the bottom-left corner (above the navigation bar, hidden while the keyboard is open) returns to the dashboard; the system back button first closes the suggestions. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. Home is a single slot: promoting a favourite to home swaps the two entries, the previous home moving into the favourites at exactly the position the new home had, and the new home becomes the displayed location; no saved place is ever dropped and none appears twice. The last displayed location is restored on the next start. |
 | Refresh | Pull-to-refresh, toolbar refresh button (both bypass the cache), automatic refresh when the app returns to the foreground, and a silent background refresh when the cached response belongs to a previous calendar day in the location's time zone. The hourly window itself advances every hour without any network request. |
 | Offline | The last response per location is cached; with no network the cached data is shown and labelled "Gespeicherte Daten" instead of an empty screen. |
 | Appearance | Material 3, light and dark theme following the system setting, rounded cards, condition-dependent gradient header, custom vector weather icons, German date/number formatting, 24-hour time. |
@@ -114,9 +114,9 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 ```powershell
 .\gradlew.bat assembleDebug          # debug APK
-.\gradlew.bat testDebugUnitTest      # unit tests (145)
+.\gradlew.bat testDebugUnitTest      # unit tests (160)
 .\gradlew.bat lintDebug              # Android lint
-.\gradlew.bat connectedDebugAndroidTest   # 21 instrumented + Compose UI tests on a running device
+.\gradlew.bat connectedDebugAndroidTest   # 24 instrumented + Compose UI tests on a running device
 .\gradlew.bat installDebug           # install on the connected device/emulator
 ```
 
@@ -148,7 +148,16 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   arrays, missing values, error payloads and corrupt cache JSON; `WeatherRepository`
   cache-first behaviour, day-boundary invalidation, force refresh, failure classification,
   partial payloads; `LocationRepository` home/favourite rules, de-duplication, reordering,
-  selection fallbacks, search debouncing/short queries; `MainViewModel` state transitions
+  selection fallbacks, search debouncing/short queries and **home switching**
+  (`LocationRepositoryTest`, 23 tests: the previous home takes the favourite slot the new home
+  leaves, the New York City/Hamburg/Dresden/Paris/Madrid sequence keeps all five places, repeated
+  home changes, six concurrent taps, duplicates already present in stored state, a single
+  favourite, a missing home entry, the new home becoming the selected location, the selection
+  surviving a restart, and no write at all when the current home is assigned again);
+  **row action colours** (`LocationRowActionColorsTest`, 5 tests: the enabled move, promote and
+  remove tints reach at least 3:1 contrast against the shipped light and dark backgrounds, the
+  disabled tint is clearly weaker yet still visible, and the three emphasis levels are
+  `onSurfaceVariant`, `primary` and `error`); `MainViewModel` state transitions
   (initial load, location switch, late responses, hourly tick without extra request, silent
   refresh after a local day change, foreground refresh, cached-while-refreshing, error states).
 - **Instrumented tests** (`app/src/androidTest`): Room cache store round-trip, replace,
@@ -156,7 +165,7 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   starting at the current hour with its day label, the hourly detail sheet, the "no usable
   observation time" label, the error state with its retry action, the "Gespeicherte Daten"
   label for cached data, and the toolbar opening the **full screen location manager**
-  (`LocationManagerScreenTest`, 10 tests): the manager shows its own title, the fixed search
+  (`LocationManagerScreenTest`, 13 tests): the manager shows its own title, the fixed search
   field and the saved places; the field and title stay in place while a 25 favourite list is
   scrolled and the home entry scrolls out with the list only; the last favourite can be
   scrolled clear of the floating back button and the button keeps at least a 48 dp touch
@@ -164,8 +173,13 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   moving them; choosing a suggestion adds the favourite, clears the query and closes the
   dropdown while staying on the location screen; the same place cannot be added twice;
   duplicate feedback is shown on the manager itself; back closes the suggestions first and the
-  screen only afterwards; the floating button returns to the dashboard; and an empty favourite
-  list still keeps the search field usable.
+  screen only afterwards; the floating button returns to the dashboard; an empty favourite
+  list still keeps the search field usable; the first "up" and last "down" arrows report
+  `Disabled` through semantics while the middle rows do not; a long place name never overlaps an
+  action button and no button is cut off at the screen edge; and driving a **real
+  `LocationRepository`** (with an in-memory `SettingsStore`) through the UI promotes a favourite
+  to home, puts the previous home back into the favourites at the slot the new home left, keeps
+  every place on screen exactly once and stores the new home as the selected location.
 
 ## Manual verification performed
 
@@ -209,7 +223,7 @@ On a `Medium_Phone_API_37.0` emulator (API 37, 1080×2400, headless), with real 
 - Persistence across force-stop and restart (home, favourites and last selection restored).
 - Logcat: empty crash buffer, no `FATAL EXCEPTION` entries during any of the above.
 
-### Location management screen and hourly start (current iteration)
+### Location management screen and hourly start
 
 Same emulator, real API traffic, screenshots in `app/build/verify/`:
 
@@ -251,9 +265,43 @@ Same emulator, real API traffic, screenshots in `app/build/verify/`:
 - Logcat after all of the above: no `FATAL EXCEPTION`, no application errors (only an
   informational Compose hidden-API note).
 
-Not verified manually: reordering across more than two favourites, the suggestion dropdown on
-very small or landscape screens, TalkBack/screen-reader behaviour of the new floating button
-and dropdown, low-API-level devices, physical devices and tablets.
+### Home location switching, icon contrast and narrow rows (current iteration)
+
+Same emulator, real API traffic, screenshots `app/build/verify/h01…h09*.png`:
+
+- Documented switch sequence: home New York City with favourites Hamburg, Dresden, Paris, Madrid.
+  Promoting **Hamburg** left the favourites as New York City, Dresden, Paris, Madrid — New York
+  City took exactly the slot Hamburg had occupied, and the home section read "Hamburg / Freie und
+  Hansestadt Hamburg, Deutschland / Wird gerade angezeigt", so the new home is also the location
+  that is displayed. Promoting **Paris** afterwards produced home Paris with favourites
+  "New York City, Dresden, Hamburg, Madrid", exactly the documented expectation.
+- Force-stop and restart: the dashboard opened on Paris (selection persisted), and the manager
+  still listed home Paris plus New York City, Dresden, Hamburg, Madrid in that order.
+- Single favourite: home New York City with only Hamburg saved; promoting Hamburg produced home
+  Hamburg and the favourite list "New York City" — nothing lost, nothing doubled.
+- No duplicate weather request when promoting a home: the dashboard header changed to the new
+  home in the same frame, and Logcat stayed free of application warnings or errors (the app
+  process logged nothing but a single informational line during the whole scenario).
+- Icons in **light and dark** theme: the reorder arrows read as `onSurfaceVariant`, the
+  promote-to-home star as `primary` and the remove action as `error` on both backgrounds; the
+  disabled first "up" and last "down" arrows are clearly fainter than their neighbours yet stay
+  visible, so the disabled state does not depend on colour alone (the semantics also report it).
+- Narrow layout: with `wm size 720x1280` and `wm density 360` (320 dp wide) at `font_scale 1.3`,
+  a favourite row gives its full width to the name and region — "New York City" and
+  "New York, Vereinigte Staaten" render completely instead of collapsing into a few ellipsised
+  characters — and the four actions move to their own right aligned line below the text, still
+  48 dp each and inside the window. Normal phone widths (411 dp) keep the previous single-line
+  layout unchanged. Screenshots `h06_narrow_fontscaled.png` (before) and
+  `h07_narrow_stacked.png` (after) show the difference.
+- The full screen manager itself is untouched: fixed title and search field, independently
+  scrolling list, floating suggestion dropdown, back button at the bottom left and the bottom
+  padding that keeps the last favourite clear of it all still behave as before, re-checked by the
+  existing instrumented tests.
+
+Not verified manually: reordering across more than two favourites, the suggestion dropdown in
+landscape, TalkBack/screen-reader behaviour of the floating button, the dropdown and the row
+actions, very large font scales (≥ 2.0) together with the widest action set, low-API-level
+devices, physical devices and tablets.
 
 ## Known limitations
 

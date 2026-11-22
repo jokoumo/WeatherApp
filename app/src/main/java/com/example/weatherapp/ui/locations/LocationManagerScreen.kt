@@ -35,10 +35,12 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -46,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -156,18 +160,23 @@ fun LocationManagerScreen(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(8.dp))
-            SavedLocationsList(
-                settings = settings,
-                selectedId = selectedId,
-                onSelect = onSelect,
-                onSetHome = onSetHome,
-                onRemove = onRemove,
-                onMove = onMove,
-                onDismiss = onDismiss,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            )
+            // The list sits directly on the painted background rather than inside a Material
+            // surface, so the content colour is provided here: otherwise widgets in the rows
+            // would inherit Compose's default black and disappear in dark mode.
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+                SavedLocationsList(
+                    settings = settings,
+                    selectedId = selectedId,
+                    onSelect = onSelect,
+                    onSetHome = onSetHome,
+                    onRemove = onRemove,
+                    onMove = onMove,
+                    onDismiss = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                )
+            }
         }
 
         val container = containerBounds
@@ -273,6 +282,11 @@ private fun SavedLocationsList(
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = stringResource(R.string.action_remove_location),
+                                    tint = locationActionColor(
+                                        MaterialTheme.colorScheme,
+                                        LocationActionEmphasis.DESTRUCTIVE,
+                                        enabled = true,
+                                    ),
                                 )
                             }
                         }
@@ -340,30 +354,38 @@ private fun FavoriteRow(
         onClick = onSelect,
         isSelected = isSelected,
         selectedLabel = if (isSelected) stringResource(R.string.locations_currently_shown) else null,
+        // Four icon buttons: on narrow screens or with a large system font the row moves them
+        // below the text instead of squeezing the name into a few characters.
+        trailingReserve = FAVORITE_ACTIONS_WIDTH,
         trailing = {
+            val scheme = MaterialTheme.colorScheme
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onMoveUp, enabled = !isFirst) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowUp,
                         contentDescription = stringResource(R.string.action_move_up),
+                        tint = locationActionColor(scheme, LocationActionEmphasis.STANDARD, !isFirst),
                     )
                 }
                 IconButton(onClick = onMoveDown, enabled = !isLast) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = stringResource(R.string.action_move_down),
+                        tint = locationActionColor(scheme, LocationActionEmphasis.STANDARD, !isLast),
                     )
                 }
                 IconButton(onClick = onSetHome) {
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = stringResource(R.string.action_set_home),
+                        tint = locationActionColor(scheme, LocationActionEmphasis.EMPHASISED, true),
                     )
                 }
                 IconButton(onClick = onRemove) {
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = stringResource(R.string.action_remove_location),
+                        tint = locationActionColor(scheme, LocationActionEmphasis.DESTRUCTIVE, true),
                     )
                 }
             }
@@ -447,7 +469,11 @@ private fun SearchSuggestionsDropdown(
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = stringResource(R.string.action_add_favorite),
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = locationActionColor(
+                                MaterialTheme.colorScheme,
+                                LocationActionEmphasis.EMPHASISED,
+                                enabled = true,
+                            ),
                         )
                     },
                 )
@@ -464,7 +490,43 @@ private fun DropdownNote(text: String) {
     )
 }
 
+/** How prominent an enabled row action is, which decides the theme colour it is painted with. */
+internal enum class LocationActionEmphasis {
+    STANDARD,
+    EMPHASISED,
+    DESTRUCTIVE,
+}
+
+/**
+ * Paint colour for the action icons of the location rows.
+ *
+ * The colour is always taken from the active [ColorScheme], never from an inherited content
+ * colour, so the icons keep their contrast in the light and in the dark theme. Disabled actions
+ * use a clearly reduced emphasis instead of the colour of an enabled action, and they stay far
+ * away from being invisible. The function is deliberately free of Compose so that a plain unit
+ * test can assert the contrast of both states in both themes.
+ */
+internal fun locationActionColor(
+    scheme: ColorScheme,
+    emphasis: LocationActionEmphasis,
+    enabled: Boolean,
+): Color {
+    if (!enabled) return scheme.onSurfaceVariant.copy(alpha = DISABLED_ACTION_ALPHA)
+    return when (emphasis) {
+        LocationActionEmphasis.STANDARD -> scheme.onSurfaceVariant
+        LocationActionEmphasis.EMPHASISED -> scheme.primary
+        LocationActionEmphasis.DESTRUCTIVE -> scheme.error
+    }
+}
+
+/** Reduced emphasis for actions the user cannot trigger at the moment, such as "move up" on the
+ * first favourite. */
+internal const val DISABLED_ACTION_ALPHA = 0.38f
+
 /** Scrollable bottom space that keeps the last favourite clear of the floating button. */
 private val FAVORITES_BOTTOM_SPACE = 96.dp
+
+/** Four 48 dp icon buttons plus the gap in front of them, as needed by [LocationListItem]. */
+private val FAVORITE_ACTIONS_WIDTH = 48.dp * 4 + 8.dp
 private val SUGGESTION_GAP = 8.dp
 private const val MAX_SUGGESTION_HEIGHT_FRACTION = 0.45f

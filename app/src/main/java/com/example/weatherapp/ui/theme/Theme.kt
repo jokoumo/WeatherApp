@@ -8,7 +8,11 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val LightColorScheme = lightColorScheme(
+/**
+ * The two shipped colour schemes. They are internal rather than private so that the colour
+ * contrast tests can assert against the palette the application really uses.
+ */
+internal val LightColorScheme = lightColorScheme(
     primary = SkyBlue,
     onPrimary = Color.White,
     primaryContainer = SkyBlueContainer,
@@ -26,7 +30,7 @@ private val LightColorScheme = lightColorScheme(
     outline = OutlineLight,
 )
 
-private val DarkColorScheme = darkColorScheme(
+internal val DarkColorScheme = darkColorScheme(
     primary = SkyBlueLight,
     onPrimary = Color(0xFF063049),
     primaryContainer = Color(0xFF17456A),

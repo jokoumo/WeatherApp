@@ -2,12 +2,19 @@ package com.example.weatherapp.data.repository
 
 import com.example.weatherapp.domain.model.DataLoadFailure
 import com.example.weatherapp.domain.model.LocationSettings
+import com.example.weatherapp.domain.model.isSamePlaceAs
 import com.example.weatherapp.testing.FakeGeocodingApi
 import com.example.weatherapp.testing.FakeSettingsStore
 import com.example.weatherapp.testing.berlin
+import com.example.weatherapp.testing.dresden
 import com.example.weatherapp.testing.geocoderResult
 import com.example.weatherapp.testing.hamburg
+import com.example.weatherapp.testing.madrid
+import com.example.weatherapp.testing.newYork
+import com.example.weatherapp.testing.paris
 import com.example.weatherapp.testing.tokyo
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -18,8 +25,9 @@ import org.junit.Test
 import java.net.UnknownHostException
 
 /**
- * Location management rules: home location, ordered favorites, duplicate prevention and the
- * selection fallback that keeps a valid location selected after a removal.
+ * Location management rules: home location swaps that never drop the previous home, ordered
+ * favorites, duplicate prevention, and the selection fallback that keeps a valid location
+ * selected after removals while an explicit home change always selects the new home.
  */
 class LocationRepositoryTest {
 
@@ -32,7 +40,7 @@ class LocationRepositoryTest {
     }
 
     @Test
-    fun `setting the home location selects it and removes the duplicate favorite`() = runTest {
+    fun `making a favorite the home location swaps it with the previous home`() = runTest {
         val (repository, _) = repositoryWith(
             LocationSettings(homeLocation = hamburg, favorites = listOf(berlin, tokyo)),
         )
@@ -40,9 +48,178 @@ class LocationRepositoryTest {
         val settings = repository.setHomeLocation(berlin)
 
         assertEquals(berlin.id, settings.homeLocation?.id)
-        assertEquals(listOf(tokyo.id), settings.favorites.map { it.id })
+        // Hamburg does not disappear: it takes the slot Berlin left in the favorites list.
+        assertEquals(listOf(hamburg.id, tokyo.id), settings.favorites.map { it.id })
         assertEquals(berlin.id, settings.selectedLocationId)
         assertEquals(berlin.id, repository.currentSettings().homeLocation?.id)
+        assertEquals(listOf(hamburg.id, tokyo.id), repository.currentSettings().favorites.map { it.id })
+    }
+
+    @Test
+    fun `the documented new york scenario keeps all five locations`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = newYork,
+                favorites = listOf(hamburg, dresden, paris, madrid),
+                selectedLocationId = newYork.id,
+            ),
+        )
+
+        val settings = repository.setHomeLocation(hamburg)
+
+        assertEquals(hamburg.id, settings.homeLocation?.id)
+        assertEquals(listOf(newYork.id, dresden.id, paris.id, madrid.id), settings.favorites.map { it.id })
+        assertEquals(hamburg.id, settings.selectedLocationId)
+        // Nothing lost and nothing doubled: home plus four favorites is still five places.
+        assertEquals(5, settings.selectableLocations.size)
+        assertEquals(5, settings.selectableLocations.distinctBy { it.coordinateKey }.size)
+    }
+
+    @Test
+    fun `repeated home changes keep every location in place`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = newYork, favorites = listOf(hamburg, dresden, paris)),
+        )
+
+        // Dresden is the second favorite: New York has to land in exactly that slot.
+        assertEquals(
+            listOf(hamburg.id, newYork.id, paris.id),
+            repository.setHomeLocation(dresden).favorites.map { it.id },
+        )
+        assertEquals(
+            listOf(hamburg.id, newYork.id, dresden.id),
+            repository.setHomeLocation(paris).favorites.map { it.id },
+        )
+        // Switching back to a former home: New York was second-to-last and moves to that slot.
+        val backToNewYork = repository.setHomeLocation(newYork)
+        assertEquals(newYork.id, backToNewYork.homeLocation?.id)
+        assertEquals(listOf(hamburg.id, paris.id, dresden.id), backToNewYork.favorites.map { it.id })
+        assertEquals(4, backToNewYork.selectableLocations.size)
+        assertEquals(4, backToNewYork.selectableLocations.distinctBy { it.coordinateKey }.size)
+        assertEquals(newYork.id, backToNewYork.selectedLocationId)
+    }
+
+    @Test
+    fun `the new home location wins over a previously selected favorite`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = newYork,
+                favorites = listOf(hamburg, dresden),
+                selectedLocationId = dresden.id,
+            ),
+        )
+
+        val settings = repository.setHomeLocation(hamburg)
+
+        // The generic "keep the selection when it is still valid" rule must not undo the tap on
+        // the home action: Dresden is still a favorite, yet Hamburg has to be selected now.
+        assertEquals(hamburg.id, settings.selectedLocationId)
+        assertEquals(hamburg.id, settings.resolveSelectedLocation()?.id)
+    }
+
+    @Test
+    fun `the new home selection survives persistence and a fresh repository`() = runTest {
+        val store = FakeSettingsStore(
+            LocationSettings(
+                homeLocation = newYork,
+                favorites = listOf(hamburg, dresden),
+                selectedLocationId = newYork.id,
+            ),
+        )
+        LocationRepository(store, FakeGeocodingApi()).setHomeLocation(hamburg)
+
+        // A second repository instance stands in for an application restart.
+        val restored = LocationRepository(store, FakeGeocodingApi()).currentSettings()
+
+        assertEquals(hamburg.id, restored.homeLocation?.id)
+        assertEquals(listOf(newYork.id, dresden.id), restored.favorites.map { it.id })
+        assertEquals(hamburg.id, restored.selectedLocationId)
+        assertEquals(hamburg.id, restored.resolveSelectedLocation()?.id)
+    }
+
+    @Test
+    fun `assigning the current home location again changes nothing and does not write`() = runTest {
+        val store = FakeSettingsStore(
+            LocationSettings(
+                homeLocation = hamburg,
+                favorites = listOf(dresden, paris),
+                selectedLocationId = hamburg.id,
+            ),
+        )
+        val repository = LocationRepository(store, FakeGeocodingApi())
+        val writesBefore = store.saveCount
+
+        val settings = repository.setHomeLocation(hamburg)
+
+        assertEquals(hamburg.id, settings.homeLocation?.id)
+        assertEquals(listOf(dresden.id, paris.id), settings.favorites.map { it.id })
+        assertEquals(hamburg.id, settings.selectedLocationId)
+        assertEquals(3, settings.selectableLocations.size)
+        assertEquals(writesBefore, store.saveCount)
+    }
+
+    @Test
+    fun `a home location stored twice does not end up in the favorites twice`() = runTest {
+        // An older persisted state kept a second copy of the home location as a favorite.
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = newYork, favorites = listOf(newYork.copy(id = "other-id"), dresden)),
+        )
+
+        val settings = repository.setHomeLocation(dresden)
+
+        assertEquals(dresden.id, settings.homeLocation?.id)
+        assertEquals(1, settings.favorites.count { it.isSamePlaceAs(newYork) })
+        assertEquals(listOf(newYork.id), settings.favorites.map { it.id })
+        assertEquals(2, settings.selectableLocations.distinctBy { it.coordinateKey }.size)
+    }
+
+    @Test
+    fun `rapid repeated home actions leave one home and no duplicates`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = newYork, favorites = listOf(hamburg, dresden, paris, madrid)),
+        )
+        val taps = listOf(hamburg, dresden, paris, madrid, hamburg, dresden)
+
+        coroutineScope {
+            taps.map { target -> async { repository.setHomeLocation(target) } }.forEach { it.await() }
+        }
+
+        // Which of the taps landed last does not matter - the invariants have to hold either way.
+        val stored = repository.currentSettings()
+        assertEquals(5, stored.selectableLocations.size)
+        assertEquals(5, stored.selectableLocations.distinctBy { it.coordinateKey }.size)
+        assertEquals(
+            setOf(newYork.id, hamburg.id, dresden.id, paris.id, madrid.id),
+            stored.selectableLocations.map { it.id }.toSet(),
+        )
+        // The last home change also decided the selection, so both agree.
+        assertEquals(stored.homeLocation?.id, stored.selectedLocationId)
+    }
+
+    @Test
+    fun `a favorite can be promoted even when it is the only saved favorite`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = newYork, favorites = listOf(hamburg)),
+        )
+
+        val settings = repository.setHomeLocation(hamburg)
+
+        assertEquals(hamburg.id, settings.homeLocation?.id)
+        assertEquals(listOf(newYork.id), settings.favorites.map { it.id })
+        assertEquals(hamburg.id, settings.selectedLocationId)
+    }
+
+    @Test
+    fun `a favorite becomes the home location when nothing is stored as home`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(favorites = listOf(hamburg, dresden), selectedLocationId = dresden.id),
+        )
+
+        val settings = repository.setHomeLocation(dresden)
+
+        assertEquals(dresden.id, settings.homeLocation?.id)
+        assertEquals(listOf(hamburg.id), settings.favorites.map { it.id })
+        assertEquals(dresden.id, settings.selectedLocationId)
     }
 
     @Test
@@ -100,6 +277,25 @@ class LocationRepositoryTest {
         // Unknown ids do not change anything.
         val unknown = repository.moveFavorite("does-not-exist", 1)
         assertEquals(listOf(berlin.id, "2929680", tokyo.id), unknown.favorites.map { it.id })
+    }
+
+    @Test
+    fun `removing or reordering another favorite keeps the current selection`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = newYork,
+                favorites = listOf(hamburg, dresden, paris),
+                selectedLocationId = hamburg.id,
+            ),
+        )
+
+        assertEquals(hamburg.id, repository.removeFavorite(paris.id).selectedLocationId)
+        assertEquals(hamburg.id, repository.moveFavorite(hamburg.id, 1).selectedLocationId)
+        assertTrue(repository.addFavorite(tokyo))
+
+        val settings = repository.currentSettings()
+        assertEquals(hamburg.id, settings.selectedLocationId)
+        assertEquals(listOf(dresden.id, hamburg.id, tokyo.id), settings.favorites.map { it.id })
     }
 
     @Test

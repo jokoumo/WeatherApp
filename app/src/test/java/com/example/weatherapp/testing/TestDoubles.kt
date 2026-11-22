@@ -82,6 +82,51 @@ val tokyo = SavedLocation(
     timeZoneId = "Asia/Tokyo",
 )
 
+/** Fixtures for the home-location swap scenario: one home plus four favorites. */
+val newYork = SavedLocation(
+    id = "5128581",
+    name = "New York",
+    latitude = 40.71,
+    longitude = -74.01,
+    admin1 = "New York",
+    country = "Vereinigte Staaten",
+    countryCode = "US",
+    timeZoneId = "America/New_York",
+)
+
+val dresden = SavedLocation(
+    id = "2935022",
+    name = "Dresden",
+    latitude = 51.05,
+    longitude = 13.74,
+    admin1 = "Sachsen",
+    country = "Deutschland",
+    countryCode = "DE",
+    timeZoneId = "Europe/Berlin",
+)
+
+val paris = SavedLocation(
+    id = "2988507",
+    name = "Paris",
+    latitude = 48.85,
+    longitude = 2.35,
+    admin1 = "Île-de-France",
+    country = "Frankreich",
+    countryCode = "FR",
+    timeZoneId = "Europe/Paris",
+)
+
+val madrid = SavedLocation(
+    id = "3117735",
+    name = "Madrid",
+    latitude = 40.42,
+    longitude = -3.7,
+    admin1 = "Madrid",
+    country = "Spanien",
+    countryCode = "ES",
+    timeZoneId = "Europe/Madrid",
+)
+
 /** Builds a Retrofit error response without starting a real HTTP call. */
 fun <T> errorResponse(code: Int, body: String = ""): Response<T> {
     val raw = okhttp3.Response.Builder()

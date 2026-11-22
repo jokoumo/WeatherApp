@@ -49,8 +49,9 @@ fun WeatherRoot(viewModel: MainViewModel) {
             search = state.search,
             onQueryChange = viewModel::onSearchQueryChange,
             onLocationChosen = { location ->
+                // setHomeLocation also selects the new home location, so no extra selection
+                // call is needed here.
                 viewModel.setHomeLocation(location)
-                viewModel.selectLocation(location.id)
             },
         )
 

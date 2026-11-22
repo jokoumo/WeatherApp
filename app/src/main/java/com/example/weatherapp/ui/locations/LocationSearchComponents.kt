@@ -3,6 +3,7 @@ package com.example.weatherapp.ui.locations
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,8 +25,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.weatherapp.R
 import com.example.weatherapp.domain.model.SavedLocation
@@ -99,7 +102,14 @@ fun LocationSearchResults(
     }
 }
 
-/** One location row: name, region line and an optional trailing action area. */
+/**
+ * One location row: name, region line and an optional trailing action area.
+ *
+ * [trailingReserve] declares how much width the action buttons need. If the row is too narrow to
+ * keep a readable amount of text next to them - small screens, long names or a large system font
+ * size - the actions move to their own right aligned line below the text instead of squeezing the
+ * name into a few characters. Touch targets and the visual style stay the same either way.
+ */
 @Composable
 fun LocationListItem(
     location: SavedLocation,
@@ -108,45 +118,75 @@ fun LocationListItem(
     isSelected: Boolean = false,
     selectedLabel: String? = null,
     trailing: @Composable () -> Unit = {},
+    trailingReserve: Dp? = null,
 ) {
-    Row(
+    val minTextWidth = MIN_READABLE_TEXT_WIDTH_DP.dp * LocalConfiguration.current.fontScale
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = location.name,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            val subtitle = location.subtitle
-            if (subtitle.isNotEmpty()) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        val actionsBelowText = trailingReserve != null && maxWidth - trailingReserve < minTextWidth
+        if (actionsBelowText) {
+            Column {
+                LocationText(location = location, isSelected = isSelected, selectedLabel = selectedLabel)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    trailing()
+                }
             }
-            if (selectedLabel != null) {
-                Text(
-                    text = selectedLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    LocationText(location = location, isSelected = isSelected, selectedLabel = selectedLabel)
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(contentAlignment = Alignment.CenterEnd) { trailing() }
             }
         }
-        Spacer(Modifier.width(8.dp))
-        Box(contentAlignment = Alignment.CenterEnd) { trailing() }
     }
 }
+
+/** Name, region line and the optional "currently shown" marker of a location row. */
+@Composable
+private fun LocationText(
+    location: SavedLocation,
+    isSelected: Boolean,
+    selectedLabel: String?,
+) {
+    Text(
+        text = location.name,
+        style = MaterialTheme.typography.bodyLarge,
+        color = if (isSelected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+    val subtitle = location.subtitle
+    if (subtitle.isNotEmpty()) {
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    if (selectedLabel != null) {
+        Text(
+            text = selectedLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+/** Below this width the name of a location stops being readable next to four action buttons. */
+private const val MIN_READABLE_TEXT_WIDTH_DP = 120
