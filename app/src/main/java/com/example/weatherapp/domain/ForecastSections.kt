@@ -71,8 +71,7 @@ fun buildForecastSections(
     val today = referenceInstant.atZone(zone).toLocalDate()
     val hours = sortedDistinctHours(snapshot.hourly)
 
-    val startIndex = hourlyWindowStartIndex(hours, referenceInstant)
-    val window = hours.subList(startIndex, minOf(startIndex + HOURLY_WINDOW_SIZE, hours.size))
+    val window = hourlyWindow(hours, referenceInstant)
 
     val futureDays = snapshot.daily
         .distinctBy { it.date }
@@ -92,15 +91,48 @@ fun sortedDistinctHours(hours: List<HourlyWeather>): List<HourlyWeather> =
     hours.distinctBy { it.instant }.sortedBy { it.instant }
 
 /**
- * Index of the hourly point that starts the rolling window: the last point whose interval has
- * already begun at [referenceInstant]. Intervals that have elapsed are never included. A list
- * that only starts later anchors at its first point, which keeps the strip usable when the API
- * did not deliver the current hour.
+ * Index of the hourly point that starts the rolling window, decided by absolute time only.
+ *
+ * The current interval is the point that contains [referenceInstant]: it starts at or before the
+ * reference instant and ends one hour later. When the payload has no point for the current hour,
+ * the window starts at the earliest later point instead of falling back to an interval that has
+ * already elapsed — at 14:30 a payload of 13:00, 15:00, 16:00 starts at 15:00, never at 13:00.
+ * A payload that ends before the current hour therefore has no start index inside the list, and
+ * [hourlyWindow] returns no entries at all rather than showing expired forecast hours.
+ *
+ * [hours] must be sorted and free of duplicates, as produced by [sortedDistinctHours].
  */
 fun hourlyWindowStartIndex(hours: List<HourlyWeather>, referenceInstant: Instant): Int {
     if (hours.isEmpty()) return 0
-    return hours.indexOfLast { !it.instant.isAfter(referenceInstant) }.coerceAtLeast(0)
+    val startedIndex = hours.indexOfLast { !it.instant.isAfter(referenceInstant) }
+    if (startedIndex < 0) return 0 // the series only begins later: show it from its first point
+    val endsCurrentInterval = hours[startedIndex].instant.plus(HOURLY_INTERVAL).isAfter(referenceInstant)
+    return if (endsCurrentInterval) startedIndex else startedIndex + 1
 }
+
+/**
+ * The points shown in the rolling strip: at most [HOURLY_WINDOW_SIZE] entries, starting at the
+ * current interval and never reaching further than one window length beyond its first entry.
+ *
+ * The horizon is a duration and not a record count, so a payload with missing hours shortens the
+ * window instead of stretching it over more than 24 hours just to fill 24 chips. Nothing is
+ * invented for the missing hours.
+ *
+ * [hours] must be sorted and free of duplicates, as produced by [sortedDistinctHours].
+ */
+fun hourlyWindow(hours: List<HourlyWeather>, referenceInstant: Instant): List<HourlyWeather> {
+    val startIndex = hourlyWindowStartIndex(hours, referenceInstant).coerceAtMost(hours.size)
+    val candidates = hours.subList(startIndex, hours.size)
+    val first = candidates.firstOrNull() ?: return emptyList()
+    val horizon = first.instant.plus(HOURLY_WINDOW_DURATION)
+    return candidates.takeWhile { it.instant.isBefore(horizon) }.take(HOURLY_WINDOW_SIZE)
+}
+
+/** Length of one hourly forecast interval. */
+private val HOURLY_INTERVAL: Duration = Duration.ofHours(1)
+
+/** Span the rolling strip may cover: [HOURLY_WINDOW_SIZE] hourly intervals. */
+private val HOURLY_WINDOW_DURATION: Duration = Duration.ofHours(HOURLY_WINDOW_SIZE.toLong())
 
 /**
  * Adds the presentation flags of the hourly strip. [window] is expected to be sorted by

@@ -61,7 +61,6 @@
     <!-- Status, errors, actions -->
     <string name="action_refresh">Aktualisieren</string>
     <string name="action_retry">Erneut versuchen</string>
-    <string name="action_close">Schließen</string>
     <string name="action_cancel">Abbrechen</string>
     <string name="action_locations">Orte</string>
     <string name="loading_weather">Wetterdaten werden geladen …</string>
@@ -100,7 +99,9 @@
     <string name="action_move_up">Nach oben verschieben</string>
     <string name="action_move_down">Nach unten verschieben</string>
     <string name="action_select_location">Anzeigen</string>
-    <string name="action_search_location">Neuen Ort suchen</string>
+    <string name="locations_screen_title">Orte verwalten</string>
+    <string name="action_back_to_weather">Zurück zum Wetter</string>
+    <string name="action_add_favorite">Als Favorit hinzufügen</string>
     <string name="message_location_duplicate">Dieser Ort ist bereits gespeichert.</string>
     <string name="message_location_added">Ort hinzugefügt.</string>
     <string name="message_home_location_set">Startseite aktualisiert.</string>

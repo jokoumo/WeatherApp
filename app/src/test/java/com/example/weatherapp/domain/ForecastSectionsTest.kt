@@ -213,8 +213,17 @@ class ForecastSectionsTest {
 
         val window = buildForecastSections(snapshot(berlin, withGap), now).hourlyEntries
 
-        assertEquals(24, window.size)
+        // The window is bounded by 24 hours of forecast time, not by 24 records: the gap stays
+        // visible as a gap and the strip ends at local 04:00 the next day instead of reaching
+        // further ahead just to produce 24 entries.
+        assertEquals(21, window.size)
         assertEquals(3, missingHourGaps(window))
+        assertEquals(start.plus(Duration.ofHours(5)), window.first().hour.instant)
+        assertEquals(start.plus(Duration.ofHours(28)), window.last().hour.instant)
+        assertTrue(
+            Duration.between(window.first().hour.instant, window.last().hour.instant)
+                < Duration.ofHours(HOURLY_WINDOW_SIZE.toLong()),
+        )
         // Every displayed entry comes from the payload: nothing is generated for the gap.
         assertTrue(window.all { entry -> withGap.any { it.instant == entry.hour.instant } })
     }

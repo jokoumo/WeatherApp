@@ -12,10 +12,10 @@ All user-visible text is German; source code, comments and this documentation ar
 | Area | Behaviour |
 | --- | --- |
 | Current weather | Temperature, condition, feels-like, today's min/max, humidity, precipitation, cloud cover, wind speed/direction/gusts, pressure. |
-| Hourly (rolling) | Horizontal strip with a rolling 24-hour window: the current hour plus the next 23 hourly forecast points, in the location's time zone. It starts at the current hour, highlights it, labels every day the window touches ("Heute", "Morgen", weekday) and moves on its own when the hour changes. Tapping an hour opens a "Stundendetails" bottom sheet with all values for that hour. |
+| Hourly (rolling) | Horizontal strip with a rolling 24-hour window: it starts at the hourly interval that **contains** the current time, highlights it, labels every day the window touches ("Heute", "Morgen", weekday) and moves on its own when the hour changes. If that current hour is missing from the response, the earliest later hour starts the window; an already elapsed hour is never used as the start, and if the payload only contains elapsed hours the strip shows the unavailable-data note instead of outdated values. The window covers the current interval plus the following 23 hourly intervals by absolute timestamp, so a gap shortens the list rather than stretching the horizon. Tapping an hour opens a "Stundendetails" bottom sheet with all values for that hour. |
 | Days 1–2 | Two detailed cards ("Morgen", "Übermorgen") with condition, precipitation probability/amount, wind, gusts, sunshine and day length. |
 | Days 3–15 | Compact list ("Ausblick") with condition icon, min/max temperature and a temperature range bar; up to the 16-day forecast horizon of the API. |
-| Locations | A home location plus favourites. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates). Home is a single slot: promoting a favourite to home replaces the previous home entry. The last displayed location is restored on the next start. |
+| Locations | A home location plus favourites, managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the saved locations live in a list that scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. A circular floating button in the bottom-left corner (above the navigation bar, hidden while the keyboard is open) returns to the dashboard; the system back button first closes the suggestions. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. Home is a single slot: promoting a favourite to home replaces the previous home entry. The last displayed location is restored on the next start. |
 | Refresh | Pull-to-refresh, toolbar refresh button (both bypass the cache), automatic refresh when the app returns to the foreground, and a silent background refresh when the cached response belongs to a previous calendar day in the location's time zone. The hourly window itself advances every hour without any network request. |
 | Offline | The last response per location is cached; with no network the cached data is shown and labelled "Gespeicherte Daten" instead of an empty screen. |
 | Appearance | Material 3, light and dark theme following the system setting, rounded cards, condition-dependent gradient header, custom vector weather icons, German date/number formatting, 24-hour time. |
@@ -41,7 +41,7 @@ MVVM with unidirectional state flow. A small manual container (`di/AppContainer`
 `WeatherApplication`) provides the singletons; no DI framework is used.
 
 ```
-Composable screens (WeatherRoot, DashboardScreen, LocationManagerSheet, LocationSetupScreen)
+Composable screens (WeatherRoot, DashboardScreen, LocationManagerScreen, LocationSetupScreen)
         ▲  MainUiState (StateFlow)                      ▼ user events
    ui/MainViewModel  ── combines settings + weather flows, owns refresh scheduling
         ▲                                                    ▼
@@ -114,9 +114,9 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 ```powershell
 .\gradlew.bat assembleDebug          # debug APK
-.\gradlew.bat testDebugUnitTest      # unit tests (128)
+.\gradlew.bat testDebugUnitTest      # unit tests (145)
 .\gradlew.bat lintDebug              # Android lint
-.\gradlew.bat connectedDebugAndroidTest   # 11 instrumented + Compose UI tests on a running device
+.\gradlew.bat connectedDebugAndroidTest   # 21 instrumented + Compose UI tests on a running device
 .\gradlew.bat installDebug           # install on the connected device/emulator
 ```
 
@@ -130,7 +130,17 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   durations, relative time, compass); the rolling hourly window (13:25, 20:15, 23:45 and 00:10
   selection, hour boundaries, no elapsed hours, sorted and unique entries, gaps without
   fabricated hours, a window truncated by the end of the data, other time zones, the clock-tick
-  delay including a 30 minute shift); daylight saving specifics (Europe/Berlin autumn with both
+  delay including a 30 minute shift); **start-interval selection** (`HourlyWindowStartSelectionTest`,
+  17 tests:
+  the interval containing the reference instant wins, a missing current hour falls forward to the
+  earliest later hour, elapsed-only payloads produce an empty window instead of stale hours, a
+  payload that starts later is shown from its first point, the exact hour boundary one second
+  before and one second after, empty and unsorted payloads, a multi-hour gap that shortens the
+  window to 19 entries inside a 24-hour horizon instead of stretching it, crossing midnight,
+  the Berlin spring and autumn transitions, the second occurrence of a repeated local hour
+  becoming current later, a half-hour offset zone such as Asia/Kolkata, and the raw
+  `hourlyWindowStartIndex` / `hourlyWindow` contract); daylight saving specifics (Europe/Berlin
+  autumn with both
   02:00 occurrences and their offsets, the spring day without 02:00, America/New_York,
   +05:30 and +05:45 zones); cache policy (TTL, local day rollover, location zone vs fixed zone,
   23 h and 25 h days, future-dated entries, hourly coverage); DTO → domain mapping with Unix
@@ -144,8 +154,18 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 - **Instrumented tests** (`app/src/androidTest`): Room cache store round-trip, replace,
   delete (in-memory database); Compose UI tests for the rendered dashboard, the hourly strip
   starting at the current hour with its day label, the hourly detail sheet, the "no usable
-  observation time" label, the error state with its retry action, the saved-locations sheet and
-  the "Gespeicherte Daten" label for cached data.
+  observation time" label, the error state with its retry action, the "Gespeicherte Daten"
+  label for cached data, and the toolbar opening the **full screen location manager**
+  (`LocationManagerScreenTest`, 10 tests): the manager shows its own title, the fixed search
+  field and the saved places; the field and title stay in place while a 25 favourite list is
+  scrolled and the home entry scrolls out with the list only; the last favourite can be
+  scrolled clear of the floating back button and the button keeps at least a 48 dp touch
+  target (bounds compared, no fixed pixel values); suggestions overlay the favourites without
+  moving them; choosing a suggestion adds the favourite, clears the query and closes the
+  dropdown while staying on the location screen; the same place cannot be added twice;
+  duplicate feedback is shown on the manager itself; back closes the suggestions first and the
+  screen only afterwards; the floating button returns to the dashboard; and an empty favourite
+  list still keeps the search field usable.
 
 ## Manual verification performed
 
@@ -189,8 +209,51 @@ On a `Medium_Phone_API_37.0` emulator (API 37, 1080×2400, headless), with real 
 - Persistence across force-stop and restart (home, favourites and last selection restored).
 - Logcat: empty crash buffer, no `FATAL EXCEPTION` entries during any of the above.
 
-Not verified manually: reordering across more than two favourites, low-API-level devices,
-physical devices and tablets.
+### Location management screen and hourly start (current iteration)
+
+Same emulator, real API traffic, screenshots in `app/build/verify/`:
+
+- Full screen manager in **light and dark** theme: "Orte verwalten" with its hint, the search
+  field and the "Gespeicherte Orte" group label stay fixed while the list under them scrolls;
+  the home section shows "Wird gerade angezeigt" and a remove action, the favourites section
+  shows reorder arrows, promote-to-home and remove, and the empty-favourites hint renders
+  when there are none.
+- Suggestions overlay: searching `berlin` showed eight results (name plus admin region and
+  country, e.g. "Berlin / Land Berlin, Deutschland" vs "Berlin / New Hampshire, Vereinigte
+  Staaten"), each with a "+" action indicator, drawn in a floating panel directly under the
+  field and over the favourites area; the panel is capped (about 45 % of the viewport, never
+  more than the space between the field and the keyboard), cuts the last row off cleanly and
+  scrolls on its own, and the favourites behind it did not move.
+- Keyboard: the field stays fully visible and editable while the keyboard is open; the
+  floating back button is hidden then and reappears as soon as the keyboard closes.
+- Back order verified with `uiautomator` dumps after each key press: the first press closed
+  the keyboard, the second closed the suggestions (the manager and its title stayed), the
+  third returned to the dashboard — no loop, no accidental exit.
+- Choosing a suggestion (Amsterdam) added it as favourite, cleared the query, closed the
+  dropdown and stayed on the location screen; selecting the already saved Berlin again showed
+  "Dieser Ort ist bereits gespeichert." and added nothing. **Found during this verification:**
+  with the keyboard open that message was rendered behind it; the snackbar host now uses
+  `imePadding()` so the message appears above the keyboard (re-verified by screenshot).
+- Nine favourites plus the home entry: the list scrolls independently (the home section
+  scrolls out while the field stays put), the first "up" and last "down" arrows are disabled,
+  and after scrolling to the end the last favourite (Prag, bottom edge y = 2038 px) ends
+  clearly above the floating back button (top edge y = 2179 px) and stays tappable.
+- The floating button returns to the dashboard; tapping a favourite (Tokio) selects it and
+  closes the manager — the dashboard then read "Montag, 23. November 2026, 04:00" while the
+  device showed 20:06, with the strip starting at "Heute / 04:00" under the day label
+  "Mo., 23. November": the corrected start interval and the location-local day labels still
+  behave for a zone five hours ahead.
+- Rolling window on the device at 20:05 local: the first chip is "Heute 20:00" followed by
+  21:00, 22:00, 23:00 — the window begins in the interval that contains the current time.
+- Switching the system theme (dark → light) closes the manager without losing any saved
+  location, because the screen flag lives in the dashboard composable while the data lives in
+  the ViewModel/DataStore.
+- Logcat after all of the above: no `FATAL EXCEPTION`, no application errors (only an
+  informational Compose hidden-API note).
+
+Not verified manually: reordering across more than two favourites, the suggestion dropdown on
+very small or landscape screens, TalkBack/screen-reader behaviour of the new floating button
+and dropdown, low-API-level devices, physical devices and tablets.
 
 ## Known limitations
 
@@ -201,9 +264,18 @@ physical devices and tablets.
 - Hourly detail is available for the hours inside the rolling 24-hour window (which can reach
   into tomorrow), not for arbitrary days; the 16-day outlook is daily data only, because the
   compact day list has no hourly drill-down.
-- The hourly window shows exactly the next 24 forecast hours; scrolling further ahead than one
-  day is not possible, and a location whose payload is shorter than 24 hours from the current
-  hour shows the shorter window instead of invented hours.
+- The rolling hourly window is bounded by **24 hours of forecast time**, not by 24 records: a
+  gap in the payload means fewer than 24 chips, and the horizon is never stretched just to
+  fill the strip. A payload whose hours have all already elapsed yields no window at all, so
+  the dashboard shows "Für den aktuellen Zeitraum sind keine Stundendaten verfügbar." instead
+  of outdated hours. Scrolling further ahead than one day is not possible.
+- The location manager is a full screen overlay inside `DashboardScreen` rather than a
+  navigation destination, so its open/closed flag and the list's scroll position are not
+  restored after a configuration change (theme switch or rotation closes it). The saved
+  locations, the selection and the pending search are held by the ViewModel and survive.
+- The suggestion dropdown is a custom anchored `Surface` instead of `ExposedDropdownMenu`,
+  which is what allows the fixed height cap, the independent scrolling and the keyboard-aware
+  placement; the trade-off is that it is not announced as a menu by accessibility services.
 - A local day change is refreshed at most once per day by the hourly tick; if that single
   attempt fails, the app keeps showing the previous day's data until the next foreground
   resume, pull-to-refresh or refresh button.

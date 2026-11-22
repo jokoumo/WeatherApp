@@ -2,6 +2,7 @@ package com.example.weatherapp.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -245,14 +246,19 @@ class DashboardScreenTest {
     }
 
     @Test
-    fun toolbarOpensTheSavedLocationsSheet() {
+    fun toolbarOpensTheFullScreenLocationManager() {
         render(stateWith())
 
         composeRule.onNodeWithContentDescription(context.getString(R.string.action_locations)).performClick()
 
+        // The manager fills the screen: its own title, the saved places, and a fixed search field.
+        composeRule.onNodeWithText(context.getString(R.string.locations_screen_title)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.locations_title)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.locations_home)).assertExists()
         composeRule.onNodeWithText(berlin.name).assertExists()
+        composeRule.onNode(hasSetTextAction()).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back_to_weather))
+            .assertIsDisplayed()
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.example.weatherapp.ui.dashboard
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,7 +52,7 @@ import com.example.weatherapp.ui.WeatherUiState
 import com.example.weatherapp.ui.components.InfoNote
 import com.example.weatherapp.ui.components.LoadingPlaceholder
 import com.example.weatherapp.ui.components.SectionHeader
-import com.example.weatherapp.ui.locations.LocationManagerSheet
+import com.example.weatherapp.ui.locations.LocationManagerScreen
 import com.example.weatherapp.ui.messageRes
 import com.example.weatherapp.ui.weather.messageRes
 import java.time.Instant
@@ -79,112 +80,118 @@ fun DashboardScreen(
     val weather = state.weather
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedEntry by remember { mutableStateOf<HourlyWindowEntry?>(null) }
-    var showLocationSheet by remember { mutableStateOf(false) }
+    var showLocationManager by remember { mutableStateOf(false) }
     val message = state.message
     val messageText = if (message != null) stringResource(message.messageRes()) else null
 
-    LaunchedEffect(messageText) {
-        if (messageText != null) {
+    // While the location manager is open it shows its own feedback, so the dashboard only reports
+    // messages that are still pending once the manager has been closed.
+    LaunchedEffect(messageText, showLocationManager) {
+        if (messageText != null && !showLocationManager) {
             snackbarHostState.showSnackbar(messageText)
             onMessageShown()
         }
     }
 
-    Scaffold(
-        modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = weather.location?.name ?: stringResource(R.string.app_name),
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        val subtitle = weather.location?.subtitle.orEmpty()
-                        if (subtitle.isNotEmpty()) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = modifier,
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
                             Text(
-                                text = subtitle,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = weather.location?.name ?: stringResource(R.string.app_name),
+                                style = MaterialTheme.typography.titleMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            val subtitle = weather.location?.subtitle.orEmpty()
+                            if (subtitle.isNotEmpty()) {
+                                Text(
+                                    text = subtitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onRefresh) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = stringResource(R.string.action_refresh),
-                        )
-                    }
-                    IconButton(onClick = { showLocationSheet = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Place,
-                            contentDescription = stringResource(R.string.action_locations),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-            )
-        },
-    ) { contentPadding ->
-        PullToRefreshBox(
-            isRefreshing = weather.isRefreshing && weather.hasData,
-            onRefresh = onRefresh,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding),
-        ) {
-            Column(
+                    },
+                    actions = {
+                        IconButton(onClick = onRefresh) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.action_refresh),
+                            )
+                        }
+                        IconButton(onClick = { showLocationManager = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Place,
+                                contentDescription = stringResource(R.string.action_locations),
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            },
+        ) { contentPadding ->
+            PullToRefreshBox(
+                isRefreshing = weather.isRefreshing && weather.hasData,
+                onRefresh = onRefresh,
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(contentPadding),
             ) {
-                val location = weather.location
-                when {
-                    state.isInitialLoading -> LoadingPlaceholder()
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    val location = weather.location
+                    when {
+                        state.isInitialLoading -> LoadingPlaceholder()
 
-                    location == null || !weather.hasData ->
-                        ErrorState(failure = weather.failure, onRetry = onRefresh)
+                        location == null || !weather.hasData ->
+                            ErrorState(failure = weather.failure, onRetry = onRefresh)
 
-                    else -> WeatherContent(
-                        location = location,
-                        weather = weather,
-                        onHourClick = { selectedEntry = it },
-                    )
+                        else -> WeatherContent(
+                            location = location,
+                            weather = weather,
+                            onHourClick = { selectedEntry = it },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
                 }
-                Spacer(Modifier.height(8.dp))
             }
         }
-    }
 
-    selectedEntry?.let { entry ->
-        HourlyDetailSheet(entry = entry, onDismiss = { selectedEntry = null })
-    }
+        selectedEntry?.let { entry ->
+            HourlyDetailSheet(entry = entry, onDismiss = { selectedEntry = null })
+        }
 
-    if (showLocationSheet) {
-        LocationManagerSheet(
-            settings = state.settings,
-            search = state.search,
-            onSelect = onSelectLocation,
-            onSetHome = onSetHomeLocation,
-            onAddFavorite = onAddFavorite,
-            onRemove = onRemoveLocation,
-            onMove = onMoveFavorite,
-            onQueryChange = onSearchQueryChange,
-            onDismiss = { showLocationSheet = false },
-        )
+        if (showLocationManager) {
+            LocationManagerScreen(
+                settings = state.settings,
+                search = state.search,
+                message = state.message,
+                onSelect = onSelectLocation,
+                onSetHome = onSetHomeLocation,
+                onAddFavorite = onAddFavorite,
+                onRemove = onRemoveLocation,
+                onMove = onMoveFavorite,
+                onQueryChange = onSearchQueryChange,
+                onMessageShown = onMessageShown,
+                onDismiss = { showLocationManager = false },
+            )
+        }
     }
 }
 
