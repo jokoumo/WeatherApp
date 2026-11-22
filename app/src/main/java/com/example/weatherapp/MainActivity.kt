@@ -4,44 +4,32 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.ViewModelProvider
+import com.example.weatherapp.ui.MainViewModel
+import com.example.weatherapp.ui.WeatherRoot
 import com.example.weatherapp.ui.theme.WeatherAppTheme
 
+/** Single activity host: light and dark theme follow the system setting automatically. */
 class MainActivity : ComponentActivity() {
+
+    private val viewModel: MainViewModel by lazy {
+        val container = (application as WeatherApplication).container
+        ViewModelProvider(this, container.mainViewModelFactory)[MainViewModel::class.java]
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             WeatherAppTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                WeatherRoot(viewModel = viewModel)
             }
         }
     }
-}
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    WeatherAppTheme {
-        Greeting("Android")
+    /** Refreshes stale data when the app returns to the foreground. */
+    override fun onResume() {
+        super.onResume()
+        viewModel.onForeground()
     }
 }

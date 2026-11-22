@@ -1,3 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">WeatherApp</string>
+    <string name="app_name">Wetter</string>
+
+    <!-- Dashboard sections -->
+    <string name="section_hourly">Heute stündlich</string>
+    <string name="section_daily">Nächste zwei Tage</string>
+    <string name="section_extended">Ausblick</string>
+    <string name="extended_hint">Ab Tag 4 wird die Vorhersage unsicherer. Die Werte dienen als Tendenz.</string>
+    <string name="tomorrow">Morgen</string>
+    <string name="day_after_tomorrow">Übermorgen</string>
+
+    <!-- Weather details -->
+    <string name="detail_feels_like">Gefühlt</string>
+    <string name="detail_humidity">Luftfeuchtigkeit</string>
+    <string name="detail_precipitation">Niederschlag</string>
+    <string name="detail_precipitation_probability">Regenwahrscheinlichkeit</string>
+    <string name="detail_wind">Wind</string>
+    <string name="detail_wind_direction">Windrichtung</string>
+    <string name="detail_wind_gusts">Windböen</string>
+    <string name="detail_cloud_cover">Bewölkung</string>
+    <string name="detail_pressure">Luftdruck</string>
+    <string name="detail_sunshine">Sonnenschein</string>
+    <string name="detail_day_length">Tageslänge</string>
+    <string name="detail_temperature">Temperatur</string>
+    <string name="feels_like_value">Gefühlt %1$s</string>
+    <string name="min_max_today">Min %1$s · Max %2$s</string>
+    <string name="hourly_details_title">Stundendetails</string>
+    <string name="content_description_weather_icon">Wettersymbol</string>
+
+    <!-- Weather conditions -->
+    <string name="weather_clear">Klar</string>
+    <string name="weather_mainly_clear">Weitgehend klar</string>
+    <string name="weather_partly_cloudy">Teilweise bewölkt</string>
+    <string name="weather_overcast">Bedeckt</string>
+    <string name="weather_fog">Nebel</string>
+    <string name="weather_rime_fog">Reifnebel</string>
+    <string name="weather_drizzle_light">Leichter Nieselregen</string>
+    <string name="weather_drizzle">Nieselregen</string>
+    <string name="weather_drizzle_dense">Dichter Nieselregen</string>
+    <string name="weather_freezing_drizzle">Gefrierender Nieselregen</string>
+    <string name="weather_rain_light">Leichter Regen</string>
+    <string name="weather_rain">Regen</string>
+    <string name="weather_rain_heavy">Starker Regen</string>
+    <string name="weather_freezing_rain">Gefrierender Regen</string>
+    <string name="weather_snow_light">Leichter Schneefall</string>
+    <string name="weather_snow">Schneefall</string>
+    <string name="weather_snow_heavy">Starker Schneefall</string>
+    <string name="weather_snow_grains">Schneegriesel</string>
+    <string name="weather_showers_light">Leichte Regenschauer</string>
+    <string name="weather_showers">Regenschauer</string>
+    <string name="weather_showers_violent">Heftige Regenschauer</string>
+    <string name="weather_snow_showers_light">Leichte Schneeschauer</string>
+    <string name="weather_snow_showers">Schneeschauer</string>
+    <string name="weather_thunderstorm">Gewitter</string>
+    <string name="weather_thunderstorm_hail">Gewitter mit Hagel</string>
+    <string name="weather_thunderstorm_severe">Schweres Gewitter mit Hagel</string>
+    <string name="weather_unknown">Keine Wetterdaten</string>
+
+    <!-- Status, errors, actions -->
+    <string name="action_refresh">Aktualisieren</string>
+    <string name="action_retry">Erneut versuchen</string>
+    <string name="action_close">Schließen</string>
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_locations">Orte</string>
+    <string name="loading_weather">Wetterdaten werden geladen …</string>
+    <string name="status_live">Aktuelle Daten</string>
+    <string name="status_cached">Gespeicherte Daten</string>
+    <string name="last_updated">Zuletzt aktualisiert: %1$s</string>
+    <string name="data_may_be_outdated">Diese Daten können veraltet sein.</string>
+    <string name="offline_notice">Keine Verbindung zum Wetterdienst. Angezeigt werden gespeicherte Daten.</string>
+    <string name="no_hourly_data">Für diesen Tag sind keine Stundendaten verfügbar.</string>
+    <string name="no_daily_data">Keine Tagesvorhersage verfügbar.</string>
+    <string name="error_no_data">Zurzeit sind keine Wetterdaten verfügbar.</string>
+
+    <string name="error_network">Es besteht keine Internetverbindung. Bitte Verbindung prüfen und erneut versuchen.</string>
+    <string name="error_timeout">Der Wetterdienst antwortet nicht schnell genug. Bitte erneut versuchen.</string>
+    <string name="error_rate_limited">Zurzeit werden zu viele Anfragen gestellt. Bitte etwas später erneut versuchen.</string>
+    <string name="error_server">Der Wetterdienst ist vorübergehend nicht erreichbar.</string>
+    <string name="error_invalid_data">Die Wetterdaten konnten nicht gelesen werden.</string>
+    <string name="error_unknown">Die Anfrage ist fehlgeschlagen. Bitte erneut versuchen.</string>
+
+    <!-- Location management -->
+    <string name="setup_title">Standort einrichten</string>
+    <string name="setup_subtitle">Suche einen Ort und lege ihn als deinen Wetter-Standort fest.</string>
+    <string name="search_hint">Ort suchen, z. B. Hamburg</string>
+    <string name="search_no_results">Keine Orte gefunden.</string>
+    <string name="search_short_query">Bitte gib mindestens zwei Zeichen ein.</string>
+    <string name="locations_title">Gespeicherte Orte</string>
+    <string name="locations_home">Startseite</string>
+    <string name="locations_favorites">Favoriten</string>
+    <string name="locations_no_favorites">Noch keine Favoriten. Füge Orte hinzu, um schnell zwischen ihnen zu wechseln.</string>
+    <string name="no_home_location">Es ist keine Startseite festgelegt.</string>
+    <string name="locations_currently_shown">Wird gerade angezeigt</string>
+    <string name="locations_add_hint">Tippe auf einen Ort, um das Wetter anzuzeigen.</string>
+    <string name="action_set_home">Als Startseite festlegen</string>
+    <string name="action_remove_location">Entfernen</string>
+    <string name="action_move_up">Nach oben verschieben</string>
+    <string name="action_move_down">Nach unten verschieben</string>
+    <string name="action_select_location">Anzeigen</string>
+    <string name="action_search_location">Neuen Ort suchen</string>
+    <string name="message_location_duplicate">Dieser Ort ist bereits gespeichert.</string>
+    <string name="message_location_added">Ort hinzugefügt.</string>
+    <string name="message_home_location_set">Startseite aktualisiert.</string>
 </resources>
