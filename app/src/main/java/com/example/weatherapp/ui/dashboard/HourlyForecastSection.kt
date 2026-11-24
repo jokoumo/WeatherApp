@@ -2,6 +2,7 @@ package com.example.weatherapp.ui.dashboard
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,13 +34,12 @@ import com.example.weatherapp.domain.WeatherFormatter
 import com.example.weatherapp.domain.model.HourlyWeather
 import com.example.weatherapp.domain.model.WeatherCondition
 import com.example.weatherapp.ui.components.DetailRow
+import com.example.weatherapp.ui.components.InfoNote
 import com.example.weatherapp.ui.components.WeatherIcon
 import com.example.weatherapp.ui.weather.descriptionRes
-import com.example.weatherapp.ui.weather.iconRes
+import com.example.weatherapp.ui.weather.explanationRes
+import com.example.weatherapp.ui.weather.labelRes
 import java.time.LocalDate
-
-/** Height reserved for the day label so all chips stay aligned. */
-private val dayLabelLineHeight = 18.dp
 
 /**
  * Horizontal strip with the rolling hourly forecast: the current hour followed by the next
@@ -75,6 +76,14 @@ fun HourlyForecast(
     }
 }
 
+/**
+ * One hour of the strip.
+ *
+ * Every chip has the same vertical structure: a day label line that is reserved even when the
+ * hour does not start a new day, the clock time, the weather symbol, the temperature and the
+ * precipitation line. Because no element is ever added or removed, all chips have the same outer
+ * height and the same positions inside them, whether or not they carry "Heute" or "Morgen".
+ */
 @Composable
 private fun HourChip(
     entry: HourlyWindowEntry,
@@ -85,7 +94,7 @@ private fun HourChip(
     val shape = RoundedCornerShape(18.dp)
     Surface(
         modifier = Modifier
-            .width(92.dp)
+            .width(hourlyChipWidth)
             .clickable(onClick = onClick),
         shape = shape,
         color = if (isCurrent) {
@@ -101,20 +110,7 @@ private fun HourChip(
                 .padding(horizontal = 8.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (entry.startsNewDay) {
-                Text(
-                    text = dayLabel(entry.dayRelation, hour.localDate),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (entry.dayRelation == HourlyDayRelation.TODAY) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                    maxLines = 1,
-                )
-            } else {
-                Spacer(Modifier.height(dayLabelLineHeight))
-            }
+            DayLabelLine(entry = entry, hour = hour)
             Spacer(Modifier.height(2.dp))
             Text(
                 // The UTC offset is only shown for clock times that occur twice in the window,
@@ -133,7 +129,12 @@ private fun HourChip(
                 maxLines = 1,
             )
             Spacer(Modifier.height(6.dp))
-            WeatherIcon(condition = hour.condition, size = 30.dp)
+            WeatherIcon(
+                condition = hour.condition,
+                precipitation = hour.precipitationStyle,
+                windWarning = hour.windWarning,
+                size = 30.dp,
+            )
             Spacer(Modifier.height(6.dp))
             Text(
                 text = WeatherFormatter.temperature(hour.temperatureCelsius),
@@ -145,8 +146,41 @@ private fun HourChip(
                 text = hour.precipitationProbabilityPercent
                     ?.let { WeatherFormatter.percent(it) }
                     ?: WeatherFormatter.millimetres(hour.precipitationMillimetres),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** Width of one hourly chip; wide enough for "100 %" and an ambiguous clock time. */
+private val hourlyChipWidth = 92.dp
+
+/**
+ * The day label line of a chip.
+ *
+ * The line is always laid out with the exact line height of the label style, so a chip without a
+ * label reserves precisely the same space as one that shows "Heute" or "Morgen". The reserved
+ * height follows the system font scale instead of being a fixed number of dp.
+ */
+@Composable
+private fun DayLabelLine(
+    entry: HourlyWindowEntry,
+    hour: HourlyWeather,
+) {
+    val labelStyle = MaterialTheme.typography.labelSmall
+    val reservedHeight = with(LocalDensity.current) { labelStyle.lineHeight.toDp() }
+    Box(modifier = Modifier.height(reservedHeight), contentAlignment = Alignment.Center) {
+        if (entry.startsNewDay) {
+            Text(
+                text = dayLabel(entry.dayRelation, hour.localDate),
+                style = labelStyle,
+                color = if (entry.dayRelation == HourlyDayRelation.TODAY) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
                 maxLines = 1,
             )
         }
@@ -182,12 +216,11 @@ fun HourlyDetailSheet(
                 .padding(bottom = 28.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(
-                        id = (hour.condition ?: WeatherCondition.UNKNOWN).iconRes(),
-                    ),
-                    contentDescription = stringResource(R.string.content_description_weather_icon),
-                    modifier = Modifier.width(46.dp).height(46.dp),
+                WeatherIcon(
+                    condition = hour.condition,
+                    precipitation = hour.precipitationStyle,
+                    windWarning = hour.windWarning,
+                    size = 46.dp,
                 )
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -259,6 +292,25 @@ fun HourlyDetailSheet(
                 label = stringResource(R.string.detail_pressure),
                 value = WeatherFormatter.pressure(hour.pressureHectopascal),
             )
+            // Names the measured value the warning is based on, so gusts are never read as
+            // sustained wind and the warning never relies on its colour alone.
+            if (hour.windWarning.isWarning) {
+                Spacer(Modifier.height(10.dp))
+                InfoNote(
+                    text = stringResource(
+                        hour.windWarning.explanationRes(),
+                        WeatherFormatter.windSpeed(hour.windSpeedKilometresPerHour),
+                        WeatherFormatter.windSpeed(hour.windGustsKilometresPerHour),
+                    ),
+                    accentColor = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(hour.windWarning.labelRes()),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
         }
     }
 }

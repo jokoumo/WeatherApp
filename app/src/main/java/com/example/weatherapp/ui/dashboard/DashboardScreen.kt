@@ -227,17 +227,6 @@ private fun WeatherContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // Tells the user whether what is on screen came from the network or from the cache.
-        val noteRes = when {
-            weather.isShowingStaleData && weather.snapshotSource == SnapshotSource.CACHED ->
-                R.string.offline_notice
-
-            weather.isShowingStaleData -> R.string.data_may_be_outdated
-            weather.snapshotSource == SnapshotSource.CACHED -> R.string.status_cached
-            weather.snapshotSource == SnapshotSource.LIVE -> R.string.status_live
-            else -> null
-        }
-        noteRes?.let { InfoNote(text = stringResource(it)) }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -270,11 +259,7 @@ private fun WeatherContent(
                 title = stringResource(R.string.section_extended),
                 note = stringResource(R.string.extended_hint),
             )
-            ExtendedDayList(
-                days = sections.extendedDays,
-                overallMin = weather.extendedMin,
-                overallMax = weather.extendedMax,
-            )
+            ExtendedDayList(days = sections.extendedDays)
         }
     }
 }

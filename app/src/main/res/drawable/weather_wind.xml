@@ -1,0 +1,26 @@
+<!-- Supplementary wind indicator drawn on top of a weather symbol. It is tinted in code:
+     neutral for strong wind, red for a storm. Three bold strokes keep it readable at the
+     small size used inside the hourly chips. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group>
+        <path
+            android:pathData="M3.0,7.6 L13.0,7.6 C15.0,7.6 16.6,6.3 16.6,4.8 C16.6,3.5 15.5,2.5 14.1,2.5"
+            android:strokeColor="#000000"
+            android:strokeWidth="2.4"
+            android:strokeLineCap="round"/>
+        <path
+            android:pathData="M3.0,12.0 L17.0,12.0 C19.3,12.0 21.1,13.5 21.1,15.3 C21.1,16.9 19.7,18.1 18.0,18.1"
+            android:strokeColor="#000000"
+            android:strokeWidth="2.4"
+            android:strokeLineCap="round"/>
+        <path
+            android:pathData="M3.0,16.4 L10.2,16.4"
+            android:strokeColor="#000000"
+            android:strokeWidth="2.4"
+            android:strokeLineCap="round"/>
+    </group>
+</vector>

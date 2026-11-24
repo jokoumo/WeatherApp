@@ -52,6 +52,8 @@ data class HourlyDto(
     @SerialName("dew_point_2m") val dewPoint: List<Double?> = emptyList(),
     @SerialName("precipitation_probability") val precipitationProbability: List<Int?> = emptyList(),
     val precipitation: List<Double?> = emptyList(),
+    /** Snowfall in centimetres; the API omits the whole series for some locations. */
+    val snowfall: List<Double?> = emptyList(),
     @SerialName("weather_code") val weatherCode: List<Int?> = emptyList(),
     @SerialName("cloud_cover") val cloudCover: List<Int?> = emptyList(),
     @SerialName("pressure_msl") val pressureMsl: List<Double?> = emptyList(),

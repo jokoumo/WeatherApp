@@ -11,10 +11,10 @@ All user-visible text is German; source code, comments and this documentation ar
 
 | Area | Behaviour |
 | --- | --- |
-| Current weather | Temperature, condition, feels-like, today's min/max, humidity, precipitation, cloud cover, wind speed/direction/gusts, pressure. |
-| Hourly (rolling) | Horizontal strip with a rolling 24-hour window: it starts at the hourly interval that **contains** the current time, highlights it, labels every day the window touches ("Heute", "Morgen", weekday) and moves on its own when the hour changes. If that current hour is missing from the response, the earliest later hour starts the window; an already elapsed hour is never used as the start, and if the payload only contains elapsed hours the strip shows the unavailable-data note instead of outdated values. The window covers the current interval plus the following 23 hourly intervals by absolute timestamp, so a gap shortens the list rather than stretching the horizon. Tapping an hour opens a "Stundendetails" bottom sheet with all values for that hour. |
+| Current weather | Temperature, condition, feels-like, today's min/max, humidity, precipitation, cloud cover, wind speed/direction/gusts, pressure. Sustained wind and gusts are checked against the wind warning thresholds and, when exceeded, marked on the weather symbol (see "Wind and gust indicators"). |
+| Hourly (rolling) | Horizontal strip with a rolling 24-hour window: it starts at the hourly interval that **contains** the current time, highlights it, labels every day the window touches ("Heute", "Morgen", weekday) and moves on its own when the hour changes. If that current hour is missing from the response, the earliest later hour starts the window; an already elapsed hour is never used as the start, and if the payload only contains elapsed hours the strip shows the unavailable-data note instead of outdated values. The window covers the current interval plus the following 23 hourly intervals by absolute timestamp, so a gap shortens the list rather than stretching the horizon. Every chip has the same outer height and the same internal layout whether or not it carries a day label, and the precipitation probability is rendered in the same size as the clock time so that "100 %" is never cut off. Tapping an hour opens a "Stundendetails" bottom sheet with all values for that hour, including a plain-text wind warning when that hour exceeds a threshold. |
 | Days 1–2 | Two detailed cards ("Morgen", "Übermorgen") with condition, precipitation probability/amount, wind, gusts, sunshine and day length. |
-| Days 3–15 | Compact list ("Ausblick") with condition icon, min/max temperature and a temperature range bar; up to the 16-day forecast horizon of the API. |
+| Days 3–15 | Compact list ("Ausblick") with weekday, date, condition icon, precipitation probability/amount and the min/max temperatures as numbers; up to the 16-day forecast horizon of the API. The written condition label and the temperature range bar were removed from these rows: the icon, the numbers and the wind marker carry the same information in less space, and the full wording stays in the detailed cards and in the accessibility label of the icon. |
 | Locations | A home location plus favourites, managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the saved locations live in a list that scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. A circular floating button in the bottom-left corner (above the navigation bar, hidden while the keyboard is open) returns to the dashboard; the system back button first closes the suggestions. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. Home is a single slot: promoting a favourite to home swaps the two entries, the previous home moving into the favourites at exactly the position the new home had, and the new home becomes the displayed location; no saved place is ever dropped and none appears twice. The last displayed location is restored on the next start. |
 | Refresh | Pull-to-refresh, toolbar refresh button (both bypass the cache), automatic refresh when the app returns to the foreground, and a silent background refresh when the cached response belongs to a previous calendar day in the location's time zone. The hourly window itself advances every hour without any network request. |
 | Offline | The last response per location is cached; with no network the cached data is shown and labelled "Gespeicherte Daten" instead of an empty screen. |
@@ -34,6 +34,68 @@ WMO weather codes are mapped to a domain enum (`WeatherCondition`) which drives 
 German description and the vector drawable. Day/night variants are resolved with the API's
 `is_day` flag. Unknown codes fall back to `UNKNOWN` — values are never invented; missing
 values render as an en dash.
+
+## Weather presentation
+
+Two small, testable classifiers in `domain/model` decide *how* a condition is presented. They
+never change what the API reported, only how it is drawn and worded.
+
+### Rain and snow: exactly three intensities
+
+`PrecipitationClassifier.classify(condition, precipitationMillimetres, snowfallCentimetres)`
+returns a `PrecipitationStyle(family, intensity)`. Rain and snow each get exactly three levels,
+and the icon and the short label are derived from the same value, so they can never disagree:
+
+| Level | Rain label | Snow label | Symbol |
+| --- | --- | --- | --- |
+| `LIGHT` | Leichter Regen | Leichter Schneefall | cloud + 1 drop / 1 flake |
+| `MODERATE` | Regen | Schneefall | cloud + 2 drops / 2 flakes |
+| `HEAVY` | Starker Regen | Starker Schneefall | cloud + 3 drops / 3 flakes |
+
+- The **WMO code is the base** of the decision: 61/80 → light, 63/81 → moderate, 65/82 → heavy
+  rain; 71/85 → light, 73 → moderate, 75/86 → heavy snow (the Open-Meteo wording of those
+  codes).
+- A reported **amount may refine that band by at most one step** — never more, because the code
+  and the amount are two different statements about the same hour. The thresholds are
+  `MODERATE_RAIN_MILLIMETRES = 0.5`, `HEAVY_RAIN_MILLIMETRES = 2.5` (mm) and
+  `MODERATE_SNOW_CENTIMETRES = 0.5`, `HEAVY_SNOW_CENTIMETRES = 1.5` (cm liquid-equivalent
+  snowfall, the unit Open-Meteo reports `snowfall` in). A missing, zero, negative or non-finite
+  amount carries no information and leaves the code band untouched.
+- **Precipitation probability is never used** for the intensity: it says how likely precipitation
+  is, not how heavy it would be. Daily precipitation sums are deliberately not used for the
+  compact day rows either — a 24-hour total says nothing about a single hour.
+- Conditions that are not plain rain or snow keep their own family and therefore their own
+  symbol and their precise wording: drizzle (51/53/55), freezing rain and freezing drizzle
+  (56/57/66/67), snow grains (77), thunderstorm (95) and thunderstorm with hail (96/99). They
+  carry no intensity, so they are never reduced to a drop or flake count.
+- `shortDescriptionRes()` is used in the compact places (hero card, hourly chip, detailed day
+  card) and returns the three-level wording; `descriptionRes()` keeps the precise meteorological
+  label ("Kräftige Regenschauer", "Gefrierender Regen", …) for the hourly detail sheet and for
+  the accessibility label of the icon.
+
+### Wind and gust indicators
+
+`WindWarningClassifier.classify(sustainedWind, gusts)` judges the two measurements **separately**
+and reports which one caused the warning, so a gust is never presented as sustained wind.
+
+| Measurement | `STRONG` ("Starker Wind") | `STORM` ("Sturm") |
+| --- | --- | --- |
+| Sustained wind | ≥ 39 km/h | ≥ 75 km/h |
+| Gusts | ≥ 50 km/h | ≥ 85 km/h |
+
+- The sustained thresholds are the lower bounds of Beaufort 6 and Beaufort 9; the gust
+  thresholds sit above the sustained ones because a short gust is a weaker statement than
+  sustained wind of the same speed. They are documented constants, not tuned per screen.
+- The **higher level wins**. When both measurements reach the same level, the warning is
+  attributed to the sustained wind; the gust cause ("Starke Windböen") is only reported when the
+  gusts push the level strictly higher.
+- Missing, negative or non-finite values never produce a warning.
+- The indicator is **not colour-only**: it is a separate wind glyph with its own accessibility
+  label ("Starker Wind", "Starke Windböen", "Sturm"), and the hourly detail sheet states the
+  cause and both speeds in text ("Sturmwarnung: Böen bis 92 km/h bei anhaltendem Wind 45 km/h.").
+  Storm is drawn in a theme-specific red (`StormRedLight` / `StormRedDark`, both ≥ 3:1 against
+  the shipped background), strong wind stays neutral. The global Material `error` colour is
+  deliberately untouched, because it also carries the destructive location action.
 
 ## Architecture
 
@@ -114,9 +176,9 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 ```powershell
 .\gradlew.bat assembleDebug          # debug APK
-.\gradlew.bat testDebugUnitTest      # unit tests (160)
+.\gradlew.bat testDebugUnitTest      # unit tests (195)
 .\gradlew.bat lintDebug              # Android lint
-.\gradlew.bat connectedDebugAndroidTest   # 24 instrumented + Compose UI tests on a running device
+.\gradlew.bat connectedDebugAndroidTest   # 33 instrumented + Compose UI tests on a running device
 .\gradlew.bat installDebug           # install on the connected device/emulator
 ```
 
@@ -159,7 +221,27 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   disabled tint is clearly weaker yet still visible, and the three emphasis levels are
   `onSurfaceVariant`, `primary` and `error`); `MainViewModel` state transitions
   (initial load, location switch, late responses, hourly tick without extra request, silent
-  refresh after a local day change, foreground refresh, cached-while-refreshing, error states).
+  refresh after a local day change, foreground refresh, cached-while-refreshing, error states);
+  **precipitation intensity** (`PrecipitationStyleTest`, 12 tests: the WMO codes behind the three
+  rain and three snow levels, showers sharing those levels with steady rain, drizzle, freezing
+  precipitation, snow grains, thunderstorm and hail keeping their own family and no intensity,
+  cloudiness and fog not being precipitation at all, a missing amount keeping the code band,
+  zero/negative/NaN/infinity carrying no information, an amount refining a code by **at most one
+  step** in both directions, the documented mm and cm thresholds, a snow code staying snow when
+  only millimetres are known, and no amount ever inventing a family without a condition);
+  **wind warnings** (`WindWarningClassifierTest`, 10 tests: no indicator below the thresholds,
+  the 39/75 km/h sustained thresholds being inclusive including 38.9 and 74.9, strong gusts
+  warning while the sustained wind stays below its own threshold, storm gusts attributed to the
+  gusts, the stronger measurement deciding the level with equal levels attributed to the sustained
+  wind, gust thresholds lying above the sustained ones, and missing, negative, NaN and infinite
+  values never warning); and the **presentation mapping** (`WeatherPresentationTest`, 13 tests:
+  three distinct drawables for the three rain and the three snow levels, showers using the symbol
+  of their intensity, a refined intensity changing symbol *and* label together,
+  drizzle/sleet/snow grains/thunderstorm/hail keeping their own symbols, day and night sky
+  symbols, the short label matching the symbol, the detailed description staying meteorologically
+  precise, wind labels naming level and cause, storm being red while strong wind stays neutral in
+  both palettes, both wind colours reaching 3:1 contrast against the shipped light and dark
+  backgrounds, and no warning having no colour).
 - **Instrumented tests** (`app/src/androidTest`): Room cache store round-trip, replace,
   delete (in-memory database); Compose UI tests for the rendered dashboard, the hourly strip
   starting at the current hour with its day label, the hourly detail sheet, the "no usable
@@ -180,6 +262,21 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   `LocationRepository`** (with an in-memory `SettingsStore`) through the UI promotes a favourite
   to home, puts the previous home back into the favourites at the slot the new home left, keeps
   every place on screen exactly once and stores the new home as the selected location.
+- **Presentation layout tests** (`WeatherPresentationUiTest`, 9 tests, added in this iteration):
+  every detail label of the hero card is displayed and stays inside the card bounds, and the
+  first detail column never reaches into the second one; three hourly chips that cross midnight
+  (so one carries "Heute", one no label and one "Morgen") have **identical heights, identical top
+  edges and identical icon top edges**, compared against each other rather than against fixed
+  pixel values; a "100 %" probability is shown and its text bounds stay inside the chip bounds;
+  a compact outlook row shows probability plus amount, both temperatures as numbers, the weekday
+  and the short date, and **no written condition label**; the day's wind warning appears as an
+  accessibility label on the row icon; the hero card shows no indicator for ordinary wind,
+  "Starker Wind" at exactly 39 km/h, "Starke Windböen" for 55 km/h gusts with 20 km/h sustained
+  wind, and "Sturm" at 80 km/h — checked by recomposing the same card, not by colour; exactly
+  one of 24 hourly chips carries the storm indicator when only that hour exceeds the threshold;
+  the new symbols and their indicators render in the light **and** the dark theme; and the
+  shipped rain and snow vectors are parsed with `XmlPullParser` to prove they draw **one, two
+  and three** precipitation marks on the same cloud path.
 
 ## Manual verification performed
 
@@ -298,10 +395,60 @@ Same emulator, real API traffic, screenshots `app/build/verify/h01…h09*.png`:
   padding that keeps the last favourite clear of it all still behave as before, re-checked by the
   existing instrumented tests.
 
+### Readability, precipitation intensity and wind indicators (current iteration)
+
+Same emulator, real API traffic, screenshots `app/build/verify/v01…v15*.png`. The home location
+was set to **Ushuaia**, which the API currently reports with light drizzle, 30 km/h sustained
+wind and 87 km/h gusts — a case that exercises the gust rule and the storm colour at the same
+time.
+
+- **Hero card labels are complete.** "Luftfeuchtigkeit" renders in full with a clear left margin.
+  Measured on the screenshot: the text node occupies x = 95…311 px and the drawn ink spans
+  x = 97…308 px, i.e. the first stroke of the "L" starts inside its own layout box and the card
+  edge is at x = 47 px — nothing is cut. The same holds for Niederschlag, Wind, Windböen,
+  Bewölkung and Luftdruck.
+- **Sustained wind and gusts stay separate.** The card shows "Wind 30 km/h WSW" and
+  "Windböen 87 km/h" as two values; the hourly detail sheet for 14:00 reads
+  "Wind 30 km/h", "Windrichtung WSW (256°)", "Windböen 85 km/h" and the note
+  *"Warnung vor starken Windböen: Böen bis 85 km/h bei anhaltendem Wind 30 km/h."* — the gust is
+  named as a gust, never presented as sustained wind.
+- **The indicator is not colour-only, and the level is visible.** Pixel sampling of the glyph
+  inside the wind badge gives, in the dark theme: hero badge (gusts 87 → storm) `#EF5350`,
+  hourly chip 14:00 (gusts 84.x → strong) `RGB(180,194,207)` neutral, hourly chip 15:00 (storm)
+  `#EF5350`, "Morgen" day card (strong) neutral again. In the light theme the storm badge is
+  `#C62828` and the strong badge `RGB(70,85,99)`. The accessibility labels reported by
+  `uiautomator` are "Sturm" for the storm hours and "Starke Windböen" for the gust-driven
+  strong-wind hours, so the difference is also available without colour.
+- **Hourly chips are uniform.** With "Heute" on the first chip and no label on the others, the
+  four visible chips have the same outer bounds (y = 1515…1883 px for every clickable chip) and
+  their clock times, symbols, temperatures and percentages sit on the same lines. The same is
+  asserted numerically by the instrumented test.
+- **"100 %" fits.** Every chip of this stormy day shows "100 %" completely, at the same size as
+  the clock time.
+- **Compact outlook rows carry numbers, not prose.** The "Ausblick" list shows
+  "Fr. / 27.11. / icon / 88 % · 1,4 mm / 5° / 14°" and so on for all 11 remaining days: no
+  written condition label and no temperature range bar anywhere in the list, min muted and max
+  emphasised, wind badges on the windy days. The 07.12. row shows a **single** drop next to
+  "66 % · 20 mm", which is the documented behaviour: the daily sum is deliberately not used to
+  grade an icon, the day's WMO code is.
+- **Drizzle keeps its own symbol and its own words**: "Leichter Nieselregen" with the three-dot
+  drizzle drawable, never a raindrop count.
+- **Light and dark theme**: both captured for the hero card, the hourly strip and the outlook
+  list; the layout is pixel-identical (same node bounds) and only the palette changes.
+- Logcat during all of the above: empty crash buffer, no `FATAL EXCEPTION`, no application
+  warnings or errors (only emulator-side `PackageConfigPersister`, `InteractionJankMonitor` and
+  an "Unexpected CPU variant for x86" notice from the runtime).
+
 Not verified manually: reordering across more than two favourites, the suggestion dropdown in
 landscape, TalkBack/screen-reader behaviour of the floating button, the dropdown and the row
 actions, very large font scales (≥ 2.0) together with the widest action set, low-API-level
 devices, physical devices and tablets.
+
+Not verified manually for the weather presentation either: a live **snow** day (the three snow
+symbols and their labels are covered by unit tests, by the instrumented rendering test and by the
+vector-content test, but no snowing location was opened on the device), a thunderstorm or hail
+location, font scales ≥ 1.5 on the hourly strip and the outlook rows, and the wind badge under
+TalkBack (the labels exist in the semantics tree, but no screen reader was run).
 
 ## Known limitations
 
@@ -327,6 +474,23 @@ devices, physical devices and tablets.
 - A local day change is refreshed at most once per day by the hourly tick; if that single
   attempt fails, the app keeps showing the previous day's data until the next foreground
   resume, pull-to-refresh or refresh button.
+- The precipitation and wind thresholds are **documented constants** (`PrecipitationClassifier`
+  and `WindWarningClassifier`), not user settings. They are deliberately conservative: a reported
+  amount may move a WMO code band by **at most one** intensity step, so an extreme mismatch
+  between the code and the amount is intentionally not fully corrected, and precipitation
+  probability never influences the intensity.
+- The compact outlook rows grade their symbol from the **day's WMO code only**. A 24-hour
+  precipitation sum never changes an icon or a label, because a daily total says nothing about a
+  single hour — which is why a day can legitimately show one drop next to "66 % · 20 mm".
+- The wind badge is a static overlay in the corner of the weather symbol. It marks *that* a
+  threshold was exceeded and which measurement caused it; it is not an official weather warning,
+  has no duration or area, and is not de-duplicated against the DWD or Met Office warning
+  services.
+- The weather symbol itself keeps the generic accessibility label "Wettersymbol" and the
+  condition wording is separate text. Because that text was removed from the compact outlook
+  rows, a screen reader there announces the weekday, the date, the precipitation numbers, both
+  temperatures and the wind warning label, but not the condition. The detailed day cards and the
+  hourly detail sheet still state it in words.
 - Verified on the API 37 phone emulator only; no physical device, tablet, or low-API-level
   device testing was done.
 - Lint reports only "newer version available" advisories for Gradle 9.6.0, core-ktx,

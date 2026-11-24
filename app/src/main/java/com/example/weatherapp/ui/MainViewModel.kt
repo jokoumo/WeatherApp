@@ -65,12 +65,6 @@ data class WeatherUiState(
     val todayMin: Double? get() = sections.todayHours.mapNotNull { it.temperatureCelsius }.minOrNull()
     val todayMax: Double? get() = sections.todayHours.mapNotNull { it.temperatureCelsius }.maxOrNull()
 
-    /** Temperature range across the compact forecast list, used for its range bars. */
-    val extendedMin: Double?
-        get() = sections.extendedDays.mapNotNull { it.minTemperatureCelsius }.minOrNull()
-    val extendedMax: Double?
-        get() = sections.extendedDays.mapNotNull { it.maxTemperatureCelsius }.maxOrNull()
-
     /**
      * Timestamp shown on the hero card, or null when no honest timestamp exists.
      *

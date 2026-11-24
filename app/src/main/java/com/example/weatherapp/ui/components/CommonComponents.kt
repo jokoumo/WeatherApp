@@ -1,6 +1,5 @@
 package com.example.weatherapp.ui.components
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,39 +12,81 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.weatherapp.R
+import com.example.weatherapp.domain.model.PrecipitationStyle
 import com.example.weatherapp.domain.model.WeatherCondition
-import com.example.weatherapp.ui.weather.iconRes
+import com.example.weatherapp.domain.model.WindWarning
+import com.example.weatherapp.ui.theme.LocalWindIndicatorColors
+import com.example.weatherapp.ui.weather.indicatorColor
+import com.example.weatherapp.ui.weather.labelRes
+import com.example.weatherapp.ui.weather.weatherIconRes
 
-/** Weather symbol for a condition. Missing conditions fall back to a neutral cloud. */
+/** Share of the weather symbol an overlaid wind indicator may cover. */
+private const val WIND_INDICATOR_RATIO = 0.5f
+
+/** Share of the wind indicator disc taken by the glyph itself. */
+private const val WIND_GLYPH_RATIO = 0.78f
+
+/** Smallest wind indicator that is still readable inside the compact hourly and day rows. */
+private val minWindIndicatorSize = 14.dp
+
+/**
+ * Weather symbol of a condition, optionally with the supplementary wind indicator.
+ *
+ * The indicator is a small tinted glyph in the upper start corner of the same footprint, so the
+ * card layout never changes and clouds, sun, moon, rain or snow stay visible. A solid backing
+ * disc keeps the glyph readable over any symbol and over the coloured header.
+ */
 @Composable
 fun WeatherIcon(
     condition: WeatherCondition?,
+    precipitation: PrecipitationStyle,
+    windWarning: WindWarning,
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
+    backingColor: Color = MaterialTheme.colorScheme.surface,
 ) {
-    Image(
-        painter = painterResource(id = (condition ?: WeatherCondition.UNKNOWN).iconRes()),
-        contentDescription = stringResource(R.string.content_description_weather_icon),
-        modifier = modifier.size(size),
-    )
+    Box(modifier = modifier.size(size)) {
+        Image(
+            painter = painterResource(id = weatherIconRes(condition, precipitation)),
+            contentDescription = stringResource(R.string.content_description_weather_icon),
+            modifier = Modifier.size(size),
+        )
+        if (windWarning.isWarning) {
+            val indicatorSize = (size.value * WIND_INDICATOR_RATIO).coerceAtLeast(
+                minWindIndicatorSize.value,
+            ).dp
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .size(indicatorSize)
+                    .background(backingColor, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.weather_wind),
+                    contentDescription = stringResource(windWarning.labelRes()),
+                    tint = windWarning.indicatorColor(LocalWindIndicatorColors.current),
+                    modifier = Modifier.size((indicatorSize.value * WIND_GLYPH_RATIO).dp),
+                )
+            }
+        }
+    }
 }
 
 /** Section heading with an optional trailing note. */
@@ -106,7 +147,12 @@ fun DetailRow(
     }
 }
 
-/** Label above value, used on the coloured header where a compact grid is needed. */
+/**
+ * Label above value, used on the coloured header where a compact grid is needed.
+ *
+ * The label may wrap instead of being cut off, which keeps long German labels such as
+ * "Luftfeuchtigkeit" complete at large system font scales and on narrow screens.
+ */
 @Composable
 fun StackedDetail(
     label: String,
@@ -120,66 +166,14 @@ fun StackedDetail(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = labelColor,
-            maxLines = 1,
         )
+        Spacer(Modifier.height(2.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.bodyLarge,
             color = valueColor,
             maxLines = 2,
         )
-    }
-}
-
-/**
- * Small bar showing where a day's temperature range sits inside the range of the whole list.
- * Renders nothing meaningful when the values are missing.
- */
-@Composable
-fun TemperatureRangeBar(
-    minTemperature: Double?,
-    maxTemperature: Double?,
-    overallMin: Double?,
-    overallMax: Double?,
-    modifier: Modifier = Modifier,
-    trackWidth: Dp = 56.dp,
-) {
-    val trackColor = MaterialTheme.colorScheme.surfaceVariant
-    val cool = Color(0xFF5B9BD5)
-    val warm = Color(0xFFE08A4B)
-    Box(
-        modifier = modifier
-            .width(trackWidth)
-            .height(10.dp)
-            .clip(RoundedCornerShape(5.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(Modifier.fillMaxWidth().height(10.dp)) {
-            val thickness = 5.dp.toPx()
-            val centerY = size.height / 2f
-            drawRoundRect(
-                color = trackColor,
-                cornerRadius = CornerRadius(thickness / 2f),
-                size = androidx.compose.ui.geometry.Size(size.width, thickness),
-                topLeft = Offset(0f, centerY - thickness / 2f),
-            )
-            if (minTemperature != null && maxTemperature != null &&
-                overallMin != null && overallMax != null && overallMax > overallMin
-            ) {
-                val span = (overallMax - overallMin).toFloat()
-                val start = ((minTemperature - overallMin) / span).toFloat().coerceIn(0f, 1f)
-                val end = ((maxTemperature - overallMin) / span).toFloat().coerceIn(0f, 1f)
-                val x0 = start * size.width
-                val x1 = (end * size.width).coerceAtLeast(x0 + thickness / 2f)
-                drawLine(
-                    brush = Brush.horizontalGradient(listOf(cool, warm)),
-                    start = Offset(x0, centerY),
-                    end = Offset(x1, centerY),
-                    strokeWidth = thickness,
-                    cap = StrokeCap.Round,
-                )
-            }
-        }
     }
 }
 

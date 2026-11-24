@@ -24,11 +24,9 @@ import androidx.compose.ui.unit.dp
 import com.example.weatherapp.R
 import com.example.weatherapp.domain.WeatherFormatter
 import com.example.weatherapp.domain.model.DailyWeather
-import com.example.weatherapp.domain.model.WeatherCondition
 import com.example.weatherapp.ui.components.StackedDetail
-import com.example.weatherapp.ui.components.TemperatureRangeBar
 import com.example.weatherapp.ui.components.WeatherIcon
-import com.example.weatherapp.ui.weather.descriptionRes
+import com.example.weatherapp.ui.weather.shortDescriptionRes
 
 /** Large card for one of the next two days, with the full set of daily values. */
 @Composable
@@ -66,7 +64,10 @@ fun DetailedDayCard(
                     )
                     Text(
                         text = stringResource(
-                            (day.condition ?: WeatherCondition.UNKNOWN).descriptionRes(),
+                            shortDescriptionRes(
+                                condition = day.condition,
+                                style = day.precipitationStyle,
+                            ),
                         ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -74,7 +75,12 @@ fun DetailedDayCard(
                     )
                 }
                 Spacer(Modifier.width(10.dp))
-                WeatherIcon(condition = day.condition, size = 44.dp)
+                WeatherIcon(
+                    condition = day.condition,
+                    precipitation = day.precipitationStyle,
+                    windWarning = day.windWarning,
+                    size = 44.dp,
+                )
                 Spacer(Modifier.width(12.dp))
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
@@ -126,7 +132,10 @@ private fun DayDetailRow(
     secondLabel: String,
     secondValue: String,
 ) {
-    Row(modifier = Modifier.fillMaxWidth()) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         StackedDetail(
             label = firstLabel,
             value = firstValue,
@@ -145,14 +154,17 @@ private fun DayDetailRow(
 }
 
 /**
- * Compact list for forecast day 4 and beyond. Values are deliberately reduced to the trend
- * information, because forecasts that far out are not reliable in detail.
+ * Compact list for forecast day 4 and beyond.
+ *
+ * Forecasts that far out are not reliable in detail, so a row carries only what stays useful:
+ * the day, the weather symbol with its wind warning when one applies, the precipitation
+ * information and the minimum and maximum temperature. Written condition labels and a
+ * temperature range bar were removed because they repeated what the symbol and the two numbers
+ * already say, and the values are set in a size that reads comfortably on a phone.
  */
 @Composable
 fun ExtendedDayList(
     days: List<DailyWeather>,
-    overallMin: Double?,
-    overallMax: Double?,
     modifier: Modifier = Modifier,
 ) {
     if (days.isEmpty()) {
@@ -172,11 +184,7 @@ fun ExtendedDayList(
     ) {
         Column(modifier = Modifier.padding(vertical = 4.dp)) {
             days.forEachIndexed { index, day ->
-                ExtendedDayRow(
-                    day = day,
-                    overallMin = overallMin,
-                    overallMax = overallMax,
-                )
+                ExtendedDayRow(day = day)
                 if (index != days.lastIndex) {
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 14.dp),
@@ -189,75 +197,71 @@ fun ExtendedDayList(
 }
 
 @Composable
-private fun ExtendedDayRow(
-    day: DailyWeather,
-    overallMin: Double?,
-    overallMax: Double?,
-) {
+private fun ExtendedDayRow(day: DailyWeather) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.width(76.dp)) {
+        Column(modifier = Modifier.width(84.dp)) {
             Text(
                 text = WeatherFormatter.weekday(day.date),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = WeatherFormatter.shortDate(day.date),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        WeatherIcon(condition = day.condition, size = 26.dp)
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(
-                    (day.condition ?: WeatherCondition.UNKNOWN).descriptionRes(),
-                ),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val precipitationInfo = listOfNotNull(
-                day.precipitationProbabilityPercent?.let { WeatherFormatter.percent(it) },
-                day.precipitationMillimetres?.let { WeatherFormatter.millimetres(it) },
-            ).joinToString(" · ")
             Text(
-                text = precipitationInfo.ifEmpty { "–" },
-                style = MaterialTheme.typography.labelSmall,
+                text = WeatherFormatter.shortDate(day.date),
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Spacer(Modifier.width(8.dp))
+        WeatherIcon(
+            condition = day.condition,
+            precipitation = day.precipitationStyle,
+            windWarning = day.windWarning,
+            size = 30.dp,
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = extendedPrecipitationText(day),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.width(10.dp))
         Text(
             text = WeatherFormatter.temperatureValue(day.minTemperatureCelsius) + "°",
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.End,
-            modifier = Modifier.width(40.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        TemperatureRangeBar(
-            minTemperature = day.minTemperatureCelsius,
-            maxTemperature = day.maxTemperatureCelsius,
-            overallMin = overallMin,
-            overallMax = overallMax,
-            trackWidth = 54.dp,
+            modifier = Modifier.width(42.dp),
         )
         Spacer(Modifier.width(6.dp))
         Text(
             text = WeatherFormatter.temperatureValue(day.maxTemperatureCelsius) + "°",
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.End,
-            modifier = Modifier.width(40.dp),
+            modifier = Modifier.width(42.dp),
         )
     }
 }
+
+/**
+ * Precipitation of a compact forecast row: the probability first, because it is what people act
+ * on, and the expected amount next to it when the API reported one. Missing values render as an
+ * en dash instead of being guessed.
+ */
+private fun extendedPrecipitationText(day: DailyWeather): String =
+    listOfNotNull(
+        day.precipitationProbabilityPercent?.let { WeatherFormatter.percent(it) },
+        day.precipitationMillimetres?.let { WeatherFormatter.millimetres(it) },
+    ).joinToString(" · ").ifEmpty {
+        WeatherFormatter.millimetres(null)
+    }

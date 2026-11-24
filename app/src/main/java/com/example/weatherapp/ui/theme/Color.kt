@@ -31,6 +31,14 @@ val OnHeader = Color(0xFFFFFFFF)
 val OnHeaderMuted = Color(0xCCFFFFFF)
 
 /**
+ * Colour of the storm wind indicator. It is deliberately a clear red in both themes rather than
+ * the scheme's error colour, whose dark variant is a pale red that would not read as a warning.
+ * The neutral strong-wind indicator uses [OnSurfaceVariantLight] and [OnSurfaceVariantDark].
+ */
+val StormRedLight = Color(0xFFC62828)
+val StormRedDark = Color(0xFFEF5350)
+
+/**
  * Header gradients. The colours sit in the mid range so that white text keeps enough
  * contrast in the light and in the dark theme.
  */

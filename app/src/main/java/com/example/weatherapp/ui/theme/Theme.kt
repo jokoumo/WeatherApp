@@ -6,6 +6,8 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -59,10 +61,33 @@ fun WeatherAppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
-        typography = WeatherTypography,
-        shapes = Shapes(),
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalWindIndicatorColors provides if (darkTheme) DarkWindIndicatorColors else LightWindIndicatorColors,
+    ) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
+            typography = WeatherTypography,
+            shapes = Shapes(),
+            content = content,
+        )
+    }
 }
+
+/**
+ * Colours of the supplementary wind indicator. Strong wind stays neutral, storm turns red, and
+ * both are chosen per theme so that they keep their contrast on the shipped backgrounds.
+ */
+data class WindIndicatorColors(val strong: Color, val storm: Color)
+
+val LightWindIndicatorColors = WindIndicatorColors(
+    strong = OnSurfaceVariantLight,
+    storm = StormRedLight,
+)
+
+val DarkWindIndicatorColors = WindIndicatorColors(
+    strong = OnSurfaceVariantDark,
+    storm = StormRedDark,
+)
+
+/** Wind indicator palette of the theme that is currently active. */
+val LocalWindIndicatorColors = staticCompositionLocalOf { LightWindIndicatorColors }

@@ -89,6 +89,7 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
             windGustsKilometresPerHour = dto.windGusts,
             pressureHectopascal = dto.pressureMsl,
             isDay = isDay,
+            snowfallCentimetres = dto.snowfall,
         )
     }
 
@@ -114,6 +115,7 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
                 windGustsKilometresPerHour = dto.windGusts.getOrNull(index),
                 pressureHectopascal = dto.pressureMsl.getOrNull(index),
                 isDay = isDay,
+                snowfallCentimetres = dto.snowfall.getOrNull(index),
             )
         }
     }

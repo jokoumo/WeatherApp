@@ -29,6 +29,15 @@
     <string name="hourly_details_title">Stundendetails</string>
     <string name="content_description_weather_icon">Wettersymbol</string>
 
+    <!-- Wind indicators -->
+    <string name="wind_warning_strong">Starker Wind</string>
+    <string name="wind_warning_storm">Sturm</string>
+    <string name="wind_warning_gusts">Starke Windböen</string>
+    <string name="wind_warning_explanation_strong">Warnung vor starkem Wind: anhaltender Wind %1$s.</string>
+    <string name="wind_warning_explanation_strong_gusts">Warnung vor starken Windböen: Böen bis %2$s bei anhaltendem Wind %1$s.</string>
+    <string name="wind_warning_explanation_storm">Sturmwarnung: anhaltender Wind %1$s.</string>
+    <string name="wind_warning_explanation_storm_gusts">Sturmwarnung: Böen bis %2$s bei anhaltendem Wind %1$s.</string>
+
     <!-- Weather conditions -->
     <string name="weather_clear">Klar</string>
     <string name="weather_mainly_clear">Weitgehend klar</string>

@@ -25,7 +25,24 @@ data class CurrentWeather(
     val windGustsKilometresPerHour: Double?,
     val pressureHectopascal: Double?,
     val isDay: Boolean?,
-)
+    /** Snowfall of the preceding hour in centimetres; null when the API did not report it. */
+    val snowfallCentimetres: Double? = null,
+) {
+    /** Rain or snowfall intensity used by the icons and the short descriptions. */
+    val precipitationStyle: PrecipitationStyle
+        get() = PrecipitationClassifier.classify(
+            condition = condition,
+            precipitationMillimetres = precipitationMillimetres,
+            snowfallCentimetres = snowfallCentimetres,
+        )
+
+    /** Wind warning of the observation; sustained wind and gusts are kept apart. */
+    val windWarning: WindWarning
+        get() = WindWarningClassifier.classify(
+            sustainedKilometresPerHour = windSpeedKilometresPerHour,
+            gustsKilometresPerHour = windGustsKilometresPerHour,
+        )
+}
 
 /**
  * One forecast value for a single hourly interval.
@@ -50,12 +67,29 @@ data class HourlyWeather(
     val windGustsKilometresPerHour: Double?,
     val pressureHectopascal: Double?,
     val isDay: Boolean?,
+    /** Snowfall of this interval in centimetres; null when the API did not report it. */
+    val snowfallCentimetres: Double? = null,
 ) {
     val localDateTime: java.time.LocalDateTime
         get() = java.time.LocalDateTime.ofInstant(instant, timeZone)
 
     val localDate: LocalDate
         get() = localDateTime.toLocalDate()
+
+    /** Rain or snowfall intensity used by the icons and the short descriptions. */
+    val precipitationStyle: PrecipitationStyle
+        get() = PrecipitationClassifier.classify(
+            condition = condition,
+            precipitationMillimetres = precipitationMillimetres,
+            snowfallCentimetres = snowfallCentimetres,
+        )
+
+    /** Wind warning of this hour; sustained wind and gusts are kept apart. */
+    val windWarning: WindWarning
+        get() = WindWarningClassifier.classify(
+            sustainedKilometresPerHour = windSpeedKilometresPerHour,
+            gustsKilometresPerHour = windGustsKilometresPerHour,
+        )
 }
 
 /** Aggregated forecast values for one calendar day in the location time zone. */
@@ -73,7 +107,25 @@ data class DailyWeather(
     val sunshineSeconds: Long?,
     /** Length of the day (sunrise to sunset) in seconds, used when sunshine is unavailable. */
     val daylightSeconds: Long?,
-)
+) {
+    /**
+     * Rain or snowfall intensity of the day.
+     *
+     * The daily sum is deliberately not used to refine it: a 24 hour accumulation cannot be
+     * compared with the hourly thresholds of [PrecipitationClassifier], and the daily WMO code
+     * already describes the dominant intensity of the day. Nothing is derived that the API did
+     * not report as an intensity.
+     */
+    val precipitationStyle: PrecipitationStyle
+        get() = PrecipitationClassifier.classify(condition = condition)
+
+    /** Wind warning built from the strongest sustained wind and the strongest gust of the day. */
+    val windWarning: WindWarning
+        get() = WindWarningClassifier.classify(
+            sustainedKilometresPerHour = maxWindSpeedKilometresPerHour,
+            gustsKilometresPerHour = maxWindGustsKilometresPerHour,
+        )
+}
 
 /** All forecast data that belongs to one location and one retrieval. */
 data class WeatherSnapshot(

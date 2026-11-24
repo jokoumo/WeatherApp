@@ -18,7 +18,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,13 +25,15 @@ import androidx.compose.ui.unit.dp
 import com.example.weatherapp.R
 import com.example.weatherapp.domain.WeatherFormatter
 import com.example.weatherapp.domain.model.CurrentWeather
+import com.example.weatherapp.domain.model.PrecipitationStyle
 import com.example.weatherapp.domain.model.SavedLocation
+import com.example.weatherapp.domain.model.WindWarning
 import com.example.weatherapp.ui.components.StackedDetail
 import com.example.weatherapp.ui.components.WeatherIcon
 import com.example.weatherapp.ui.theme.OnHeader
 import com.example.weatherapp.ui.theme.OnHeaderMuted
-import com.example.weatherapp.ui.weather.descriptionRes
 import com.example.weatherapp.ui.weather.headerGradient
+import com.example.weatherapp.ui.weather.shortDescriptionRes
 import java.time.Instant
 import java.time.ZoneId
 
@@ -96,7 +97,13 @@ fun CurrentWeatherCard(
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                WeatherIcon(condition = condition, size = 76.dp)
+                WeatherIcon(
+                    condition = condition,
+                    precipitation = current?.precipitationStyle ?: PrecipitationStyle.NONE,
+                    windWarning = current?.windWarning ?: WindWarning.NONE,
+                    size = 76.dp,
+                    backingColor = OnHeader,
+                )
             }
 
             Spacer(Modifier.height(14.dp))
@@ -110,7 +117,12 @@ fun CurrentWeatherCard(
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource((condition ?: com.example.weatherapp.domain.model.WeatherCondition.UNKNOWN).descriptionRes()),
+                        text = stringResource(
+                            shortDescriptionRes(
+                                condition = condition,
+                                style = current?.precipitationStyle ?: PrecipitationStyle.NONE,
+                            ),
+                        ),
                         style = MaterialTheme.typography.titleMedium,
                         color = OnHeader,
                         maxLines = 2,
@@ -142,10 +154,10 @@ fun CurrentWeatherCard(
                 color = OnHeaderMuted.copy(alpha = 0.35f),
             )
 
+            // No clip here on purpose: a rounded clip on this column would cut the first
+            // strokes of the leftmost label, which is what made "Luftfeuchtigkeit" look broken.
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp)),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 HeaderDetailRow(
@@ -172,6 +184,10 @@ fun CurrentWeatherCard(
     }
 }
 
+/**
+ * Two detail pairs side by side. The gap between the columns keeps a long value of the first
+ * column from touching the label of the second one.
+ */
 @Composable
 private fun HeaderDetailRow(
     firstLabel: String,
@@ -179,7 +195,10 @@ private fun HeaderDetailRow(
     secondLabel: String,
     secondValue: String,
 ) {
-    Row(modifier = Modifier.fillMaxWidth()) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         StackedDetail(
             label = firstLabel,
             value = firstValue,
