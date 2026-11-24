@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Flat Color weather icon palette (light theme). Every weather drawable references these
+    colour tokens instead of hard-coded values, so the whole icon family shares one palette
+    and the geometry never has to change between themes. The dark variants live in
+    res/values-night/colors.xml under exactly the same names.
+-->
+<resources>
+    <color name="weather_sun">#F5BE45</color>
+    <color name="weather_sun_accent">#F2A93B</color>
+    <color name="weather_cloud">#93AEC7</color>
+    <color name="weather_cloud_shadow">#6E8FAE</color>
+    <color name="weather_cloud_secondary">#AFC5D8</color>
+    <color name="weather_rain">#2A7BC8</color>
+    <color name="weather_snow">#63B8E8</color>
+    <color name="weather_hail">#5AA8D8</color>
+    <color name="weather_moon">#F2C14E</color>
+    <color name="weather_lightning">#F5B429</color>
+    <color name="weather_fog">#7C93A8</color>
+</resources>

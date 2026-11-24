@@ -3,6 +3,7 @@ package com.example.weatherapp.ui.weather
 import androidx.compose.ui.graphics.Color
 import com.example.weatherapp.R
 import com.example.weatherapp.domain.model.PrecipitationClassifier
+import com.example.weatherapp.domain.model.PrecipitationFamily
 import com.example.weatherapp.domain.model.PrecipitationIntensity
 import com.example.weatherapp.domain.model.PrecipitationStyle
 import com.example.weatherapp.domain.model.WeatherCondition
@@ -11,6 +12,14 @@ import com.example.weatherapp.domain.model.WindWarningCause
 import com.example.weatherapp.domain.model.WindWarningLevel
 import com.example.weatherapp.ui.theme.DarkColorScheme
 import com.example.weatherapp.ui.theme.DarkWindIndicatorColors
+import com.example.weatherapp.ui.theme.HeaderClearDay
+import com.example.weatherapp.ui.theme.HeaderClearNight
+import com.example.weatherapp.ui.theme.HeaderCloudy
+import com.example.weatherapp.ui.theme.HeaderFog
+import com.example.weatherapp.ui.theme.HeaderRain
+import com.example.weatherapp.ui.theme.HeaderSnow
+import com.example.weatherapp.ui.theme.HeaderThunder
+import com.example.weatherapp.ui.theme.HeaderWindIndicatorColors
 import com.example.weatherapp.ui.theme.LightColorScheme
 import com.example.weatherapp.ui.theme.LightWindIndicatorColors
 import com.example.weatherapp.ui.theme.WindIndicatorColors
@@ -196,6 +205,107 @@ class WeatherPresentationTest {
         assertEquals(Color.Transparent, WindWarning.NONE.indicatorColor(colors))
     }
 
+    /**
+     * The icon family is a closed set. No condition combined with any intensity the presentation
+     * can produce may fall out of it, because a missing drawable is a crash on the device.
+     */
+    @Test
+    fun `every condition and intensity resolves to an icon of the family`() {
+        val styles = PrecipitationFamily.entries.flatMap { family ->
+            (listOf<PrecipitationIntensity?>(null) + PrecipitationIntensity.entries)
+                .map { intensity -> PrecipitationStyle(family, intensity) }
+        }
+        WeatherCondition.entries.forEach { condition ->
+            (styles + PrecipitationStyle.NONE).forEach { style ->
+                val res = weatherIconRes(condition, style)
+                assertTrue("$condition with $style has no icon", res in iconFamily)
+            }
+        }
+    }
+
+    @Test
+    fun `day and night variants of one sky state are different symbols`() {
+        assertNotEquals(
+            weatherIconRes(WeatherCondition.CLEAR_DAY, PrecipitationStyle.NONE),
+            weatherIconRes(WeatherCondition.CLEAR_NIGHT, PrecipitationStyle.NONE),
+        )
+        assertNotEquals(
+            weatherIconRes(WeatherCondition.PARTLY_CLOUDY_DAY, PrecipitationStyle.NONE),
+            weatherIconRes(WeatherCondition.PARTLY_CLOUDY_NIGHT, PrecipitationStyle.NONE),
+        )
+    }
+
+    /**
+     * The hero card draws its symbol on the header gradient, which stays dark in both themes, so
+     * the header palette has to be a light neutral next to a lighter storm red. The glyph sits in
+     * the upper end corner of the card, that is on the darker part of the gradient, so the check
+     * runs against the gradient at the height of the symbol instead of against its lightest stop.
+     *
+     * The neutral keeps the 3:1 a graphical object needs. The storm red cannot reach 3:1 on the
+     * blue header tones without turning into a pale salmon that no longer reads as a warning, so
+     * it is held at 1.5:1 and the storm stays additionally marked as text in the same card.
+     */
+    @Test
+    fun `the header wind palette stays readable on every header`() {
+        val colors = HeaderWindIndicatorColors
+        assertTrue(
+            "the neutral header indicator has to be light",
+            luminance(colors.strong) > 0.45,
+        )
+        assertTrue(
+            "storm has to stay red on the header as well",
+            colors.storm.red.toDouble() > colors.storm.green.toDouble(),
+        )
+        listOf(
+            HeaderClearDay,
+            HeaderClearNight,
+            HeaderCloudy,
+            HeaderRain,
+            HeaderSnow,
+            HeaderThunder,
+            HeaderFog,
+        ).forEach { (top, bottom) ->
+            val behindSymbol = blend(top, bottom, SYMBOL_BAND)
+            val neutral = contrastRatio(colors.strong, behindSymbol)
+            assertTrue(
+                "strong wind needs 3:1 on $behindSymbol, was ${neutral.format()}",
+                neutral >= 3.0,
+            )
+            val storm = contrastRatio(colors.storm, behindSymbol)
+            assertTrue(
+                "storm needs 1.5:1 on $behindSymbol, was ${storm.format()}",
+                storm >= 1.5,
+            )
+        }
+    }
+
+    private fun blend(first: Color, second: Color, fraction: Float): Color = Color(
+        red = first.red + (second.red - first.red) * fraction,
+        green = first.green + (second.green - first.green) * fraction,
+        blue = first.blue + (second.blue - first.blue) * fraction,
+    )
+
+    private val iconFamily = setOf(
+        R.drawable.weather_clear_day,
+        R.drawable.weather_clear_night,
+        R.drawable.weather_partly_cloudy_day,
+        R.drawable.weather_partly_cloudy_night,
+        R.drawable.weather_cloudy,
+        R.drawable.weather_overcast,
+        R.drawable.weather_rain_light,
+        R.drawable.weather_rain_moderate,
+        R.drawable.weather_rain_heavy,
+        R.drawable.weather_drizzle,
+        R.drawable.weather_snow_light,
+        R.drawable.weather_snow_moderate,
+        R.drawable.weather_snow_heavy,
+        R.drawable.weather_snow_grains,
+        R.drawable.weather_sleet,
+        R.drawable.weather_fog,
+        R.drawable.weather_thunderstorm,
+        R.drawable.weather_hail,
+    )
+
     private fun contrastRatio(foreground: Color, background: Color): Double {
         val first = luminance(foreground)
         val second = luminance(background)
@@ -212,3 +322,6 @@ class WeatherPresentationTest {
 
     private fun Double.format(): String = String.format("%.2f", this)
 }
+
+/** Fraction of the header gradient the weather symbol of the hero card covers. */
+private const val SYMBOL_BAND = 0.35f

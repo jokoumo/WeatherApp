@@ -39,6 +39,18 @@ val StormRedLight = Color(0xFFC62828)
 val StormRedDark = Color(0xFFEF5350)
 
 /**
+ * Neutral colour of the wind indicator when the weather symbol sits on the header gradient.
+ * The header is dark in both themes, so the regular theme neutral would disappear there.
+ */
+val HeaderWindStrong = Color(0xFFD8E4EE)
+
+/**
+ * Storm red for the same case. A lighter red than [StormRedDark] is the only red that stays
+ * recognisable on the blue header tones; the exact limit is documented in the README.
+ */
+val HeaderStormRed = Color(0xFFFF6F60)
+
+/**
  * Header gradients. The colours sit in the mid range so that white text keeps enough
  * contrast in the light and in the dark theme.
  */

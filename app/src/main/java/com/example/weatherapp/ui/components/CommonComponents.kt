@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,25 +31,27 @@ import com.example.weatherapp.domain.model.PrecipitationStyle
 import com.example.weatherapp.domain.model.WeatherCondition
 import com.example.weatherapp.domain.model.WindWarning
 import com.example.weatherapp.ui.theme.LocalWindIndicatorColors
+import com.example.weatherapp.ui.theme.WindIndicatorColors
 import com.example.weatherapp.ui.weather.indicatorColor
 import com.example.weatherapp.ui.weather.labelRes
 import com.example.weatherapp.ui.weather.weatherIconRes
 
-/** Share of the weather symbol an overlaid wind indicator may cover. */
-private const val WIND_INDICATOR_RATIO = 0.5f
+/**
+ * Share of the weather symbol's footprint the wind glyph may occupy. The Flat Color icons keep
+ * their upper end corner free, so this stays well below the old half-size overlay disc.
+ */
+private const val WIND_INDICATOR_RATIO = 0.34f
 
-/** Share of the wind indicator disc taken by the glyph itself. */
-private const val WIND_GLYPH_RATIO = 0.78f
-
-/** Smallest wind indicator that is still readable inside the compact hourly and day rows. */
-private val minWindIndicatorSize = 14.dp
+/** Smallest wind glyph that still reads as wind inside the compact hourly and day rows. */
+private val minWindIndicatorSize = 9.dp
 
 /**
  * Weather symbol of a condition, optionally with the supplementary wind indicator.
  *
- * The indicator is a small tinted glyph in the upper start corner of the same footprint, so the
- * card layout never changes and clouds, sun, moon, rain or snow stay visible. A solid backing
- * disc keeps the glyph readable over any symbol and over the coloured header.
+ * The indicator is a small untinted-by-default wind glyph in the free upper end corner of the
+ * same footprint: no backing disc, no extra padding and no layout change, so the cloud, sun,
+ * moon, rain or snow underneath stay fully visible. Every weather drawable reserves that corner,
+ * which is why the glyph never covers the sun, the moon or a precipitation symbol.
  */
 @Composable
 fun WeatherIcon(
@@ -59,7 +60,7 @@ fun WeatherIcon(
     windWarning: WindWarning,
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
-    backingColor: Color = MaterialTheme.colorScheme.surface,
+    windIndicatorColors: WindIndicatorColors = LocalWindIndicatorColors.current,
 ) {
     Box(modifier = modifier.size(size)) {
         Image(
@@ -71,20 +72,14 @@ fun WeatherIcon(
             val indicatorSize = (size.value * WIND_INDICATOR_RATIO).coerceAtLeast(
                 minWindIndicatorSize.value,
             ).dp
-            Box(
+            Icon(
+                painter = painterResource(id = R.drawable.weather_wind),
+                contentDescription = stringResource(windWarning.labelRes()),
+                tint = windWarning.indicatorColor(windIndicatorColors),
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .size(indicatorSize)
-                    .background(backingColor, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.weather_wind),
-                    contentDescription = stringResource(windWarning.labelRes()),
-                    tint = windWarning.indicatorColor(LocalWindIndicatorColors.current),
-                    modifier = Modifier.size((indicatorSize.value * WIND_GLYPH_RATIO).dp),
-                )
-            }
+                    .align(Alignment.TopEnd)
+                    .size(indicatorSize),
+            )
         }
     }
 }

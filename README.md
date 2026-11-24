@@ -17,7 +17,7 @@ All user-visible text is German; source code, comments and this documentation ar
 | Days 3–15 | Compact list ("Ausblick") with weekday, date, condition icon, precipitation probability/amount and the min/max temperatures as numbers; up to the 16-day forecast horizon of the API. The written condition label and the temperature range bar were removed from these rows: the icon, the numbers and the wind marker carry the same information in less space, and the full wording stays in the detailed cards and in the accessibility label of the icon. |
 | Locations | A home location plus favourites, managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the saved locations live in a list that scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. A circular floating button in the bottom-left corner (above the navigation bar, hidden while the keyboard is open) returns to the dashboard; the system back button first closes the suggestions. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. Home is a single slot: promoting a favourite to home swaps the two entries, the previous home moving into the favourites at exactly the position the new home had, and the new home becomes the displayed location; no saved place is ever dropped and none appears twice. The last displayed location is restored on the next start. |
 | Refresh | Pull-to-refresh, toolbar refresh button (both bypass the cache), automatic refresh when the app returns to the foreground, and a silent background refresh when the cached response belongs to a previous calendar day in the location's time zone. The hourly window itself advances every hour without any network request. |
-| Offline | The last response per location is cached; with no network the cached data is shown and labelled "Gespeicherte Daten" instead of an empty screen. |
+| Offline | The last response per location is cached; with no network the cached data is shown instead of an empty screen. |
 | Appearance | Material 3, light and dark theme following the system setting, rounded cards, condition-dependent gradient header, custom vector weather icons, German date/number formatting, 24-hour time. |
 
 ## Data source
@@ -96,6 +96,99 @@ and reports which one caused the warning, so a gust is never presented as sustai
   Storm is drawn in a theme-specific red (`StormRedLight` / `StormRedDark`, both ≥ 3:1 against
   the shipped background), strong wind stays neutral. The global Material `error` colour is
   deliberately untouched, because it also carries the destructive location action.
+- The glyph is **part of the icon footprint**: `WeatherIcon` draws it in the free upper end corner
+  of the same box, at 34 % of the symbol size (never below 9 dp), without a backing disc and
+  without changing the layout. Every weather drawable keeps that corner empty — the sun rays are
+  rotated by 22.5°, the moon opens to the lower left, and the sky of a partly cloudy symbol sits
+  in the upper *start* corner — so the indicator never covers the sun, the moon, a cloud or a
+  precipitation mark.
+- On the coloured header gradient of the hero card the theme neutrals would be invisible, so that
+  one place passes `HeaderWindIndicatorColors` (`HeaderWindStrong` neutral, `HeaderStormRed`
+  storm) instead of the theme pair. The limit of that choice is documented under
+  [Known limitations](#known-limitations).
+
+### Weather icon design system
+
+All 19 weather symbols are Android `VectorDrawable`s in `app/src/main/res/drawable/`, named
+`weather_<state>.xml`: `clear_day`, `clear_night`, `partly_cloudy_day`, `partly_cloudy_night`,
+`cloudy` (the fallback for unknown data), `overcast`, `rain_light`, `rain_moderate`,
+`rain_heavy`, `drizzle`, `snow_light`, `snow_moderate`, `snow_heavy`, `snow_grains`, `sleet`,
+`fog`, `thunderstorm`, `hail`, plus `wind` for the indicator. Consistency is the design goal:
+one grid, one cloud, one drop, one flake, one bolt, one fog bar set, one palette.
+
+**Geometry.** Every icon uses `android:width="48dp"`, `android:height="48dp"` and a
+`48 × 48` viewport with a four-unit safe margin. The elements are placed on fixed bands, so a
+cloud, its precipitation and the wind corner never collide:
+
+| Element | Construction |
+| --- | --- |
+| Cloud | One `pathData` (three circles plus the flat base, bounds x 6…38, y 8.5…31). The shadow is the *same* path inside `<group android:translateY="2">`, drawn first; overcast adds the same path again at scale 0.62 behind. |
+| Sun | Disc r 8.5 at (22, 24) plus an accent disc r 8.5 at (22, 25.5); eight round-capped rays from r 10.5 to r 12.2 at 22.5° + 45°·k. The offset keeps the rays out of the reserved wind corner. |
+| Moon | One crescent: r 11.5 at (22, 24) cut by r 11 at (28.5, 18.5), opening to the lower left. |
+| Drop | One teardrop, 6.6 × 9.6 units, centred on y 39.2. One mark → x 22; two → 16.5 / 27.5; three → 11 / 22 / 33. |
+| Flake | Three stroked lines through one centre (vertical plus ±60°), 7.8 units across, same centres as the drops. |
+| Bolt | One closed zigzag under the cloud; hail shifts it three units to the left to make room for the hail dots. |
+| Fog | Three horizontal stroked bars (y 32.5 / 37.5 / 42.5), the middle one offset to the right. |
+| Drizzle, snow grains, hail dots | Circles r 2.2–2.5 on the same precipitation band. |
+| Wind | Three stroked curved lines with round caps, tinted in code, never baked into a weather icon. |
+
+Precipitation always occupies the band y 34…44, the cloud y 8.5…33 and the sky symbol is centred
+on (22, 24). The rectangle x 32.6…45, y 1.4…14 is **reserved for the wind indicator** and stays
+empty in every symbol.
+
+**Palette.** Icons never hard-code a colour; they reference tokens from `res/values/colors.xml`,
+and `res/values-night/colors.xml` overrides the same names. The theme therefore changes the
+colours of the *identical* geometry:
+
+| Token | Light | Night | Used for |
+| --- | --- | --- | --- |
+| `weather_sun` | `#F5BE45` | `#FFD166` | sun disc |
+| `weather_sun_accent` | `#F2A93B` | `#FFB347` | sun shade |
+| `weather_cloud` | `#93AEC7` | `#A8BED1` | cloud silhouette |
+| `weather_cloud_shadow` | `#6E8FAE` | `#7898B5` | offset cloud shadow |
+| `weather_cloud_secondary` | `#AFC5D8` | `#C3D5E4` | second cloud of `overcast` |
+| `weather_rain` | `#2A7BC8` | `#4FA8EC` | drops, freezing precipitation |
+| `weather_snow` | `#63B8E8` | `#D5F0FF` | flakes, snow grains |
+| `weather_hail` | `#5AA8D8` | `#CFE9FA` | hail dots |
+| `weather_moon` | `#F2C14E` | `#FFE3A3` | crescent |
+| `weather_lightning` | `#F5B429` | `#FFD54F` | bolt |
+| `weather_fog` | `#7C93A8` | `#91A6B8` | fog bars |
+
+Rules for changing the family: never scale or move a single element of one icon — change the
+shared path in every icon that uses it; add a new state by reusing the existing cloud, drop,
+flake, bolt and dot paths; change colours only in the two `colors.xml` files. The instrumented
+`WeatherPresentationUiTest` enforces the shared viewport, the shared cloud silhouette and the
+identical drop and flake geometry, and a palette test checks every token against the shipped
+light and dark surfaces.
+
+**Sizes.** The application renders the symbols at 30 dp (hourly chip, compact day row), 44 dp
+(day card), 46 dp (hourly detail sheet) and 76 dp (hero card). The gallery below shows 24, 32,
+48 and 72 dp, which brackets those sizes.
+
+**Previewing the whole family.** `app/src/debug/java/com/example/weatherapp/ui/gallery/` holds a
+development-only screen that renders every condition — one row per `WeatherCondition`, plus rows
+that combine a symbol with each wind level — at 24, 32, 48 and 72 dp on four backgrounds: the
+light card, the dark card and two header gradients. It lives in the debug source set, is
+declared only in `app/src/debug/AndroidManifest.xml` with `android:exported="false"`, and is not
+reachable from the production navigation.
+
+- In Android Studio: open `WeatherIconGallery.kt` and use the two `@Preview` functions
+  (light and dark).
+- On a device or emulator, start it in process (it is not exported) with the debug-only helper
+  test, which writes one PNG per page into the app's files directory:
+
+  ```powershell
+  .\gradlew.bat assembleDebugAndroidTest
+  adb install -r app\build\outputs\apk\debug\app-debug.apk
+  adb install -r app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+  adb shell am instrument -w -e class com.example.weatherapp.ui.gallery.WeatherIconGalleryScreenshotTest `
+      com.example.weatherapp.test/androidx.test.runner.AndroidJUnitRunner
+  adb exec-out run-as com.example.weatherapp tar -c -C files/icon_gallery . > gallery.tar
+  ```
+
+  `adb shell cmd uimode night yes|no` switches the theme of the run. The screenshots are a
+  review artefact of the debug build and are not part of the repository.
+
 
 ## Architecture
 
@@ -234,19 +327,24 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   warning while the sustained wind stays below its own threshold, storm gusts attributed to the
   gusts, the stronger measurement deciding the level with equal levels attributed to the sustained
   wind, gust thresholds lying above the sustained ones, and missing, negative, NaN and infinite
-  values never warning); and the **presentation mapping** (`WeatherPresentationTest`, 13 tests:
+  values never warning); and the **presentation mapping** (`WeatherPresentationTest`, 16 tests:
   three distinct drawables for the three rain and the three snow levels, showers using the symbol
   of their intensity, a refined intensity changing symbol *and* label together,
   drizzle/sleet/snow grains/thunderstorm/hail keeping their own symbols, day and night sky
   symbols, the short label matching the symbol, the detailed description staying meteorologically
-  precise, wind labels naming level and cause, storm being red while strong wind stays neutral in
-  both palettes, both wind colours reaching 3:1 contrast against the shipped light and dark
-  backgrounds, and no warning having no colour).
+  precise, **every condition and intensity resolving to a drawable of the icon family** so no
+  state can point at a missing resource, the day and night variant of one sky state being a
+  different symbol, wind labels naming level and cause, storm being red while strong wind stays
+  neutral in both palettes, both wind colours reaching 3:1 contrast against the shipped light and
+  dark backgrounds, the **header wind palette staying readable on every header gradient** (neutral
+  at 3:1 or better, storm red distinguishable, neutral lighter than the gradient and storm red
+  actually red), and no warning having no colour).
 - **Instrumented tests** (`app/src/androidTest`): Room cache store round-trip, replace,
   delete (in-memory database); Compose UI tests for the rendered dashboard, the hourly strip
   starting at the current hour with its day label, the hourly detail sheet, the "no usable
-  observation time" label, the error state with its retry action, the "Gespeicherte Daten"
-  label for cached data, and the toolbar opening the **full screen location manager**
+  observation time" label, the error state with its retry action, cached data being presented
+  under the "Zuletzt aktualisiert" line **without** any status strip below it, and the toolbar
+  opening the **full screen location manager**
   (`LocationManagerScreenTest`, 13 tests): the manager shows its own title, the fixed search
   field and the saved places; the field and title stay in place while a 25 favourite list is
   scrolled and the home entry scrolls out with the list only; the last favourite can be
@@ -262,7 +360,7 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   `LocationRepository`** (with an in-memory `SettingsStore`) through the UI promotes a favourite
   to home, puts the previous home back into the favourites at the slot the new home left, keeps
   every place on screen exactly once and stores the new home as the selected location.
-- **Presentation layout tests** (`WeatherPresentationUiTest`, 9 tests, added in this iteration):
+- **Presentation layout and icon family tests** (`WeatherPresentationUiTest`, 12 tests):
   every detail label of the hero card is displayed and stays inside the card bounds, and the
   first detail column never reaches into the second one; three hourly chips that cross midnight
   (so one carries "Heute", one no label and one "Morgen") have **identical heights, identical top
@@ -274,9 +372,19 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   "Starker Wind" at exactly 39 km/h, "Starke Windböen" for 55 km/h gusts with 20 km/h sustained
   wind, and "Sturm" at 80 km/h — checked by recomposing the same card, not by colour; exactly
   one of 24 hourly chips carries the storm indicator when only that hour exceeds the threshold;
-  the new symbols and their indicators render in the light **and** the dark theme; and the
-  shipped rain and snow vectors are parsed with `XmlPullParser` to prove they draw **one, two
-  and three** precipitation marks on the same cloud path.
+  the new symbols and their indicators render in the light **and** the dark theme; and the shipped
+  vectors are parsed from the installed package with `XmlPullParser` to prove the icon family:
+  **every one of the 32 conditions in all its family and intensity styles loads a real drawable**,
+  the rain and snow symbols draw **one, two and three** precipitation marks whose path geometry is
+  byte-identical inside a family (drops filled, flakes stroked), every cloudy icon reuses the same
+  `48 × 48` viewport and the same cloud silhouette, and every colour token of the palette stays
+  visible on the shipped light **and** dark card and window backgrounds.
+- **Icon gallery tests** (`app/src/androidTest/.../ui/gallery`, 3 tests): the debug gallery covers
+  every `WeatherCondition` exactly once plus the wind-warning combinations, and it renders every
+  row at every comparison size (39 rows × 4 sizes × 4 backgrounds = 624 icon nodes in the
+  semantics tree). A third test is a development tool rather than an assertion: it writes one PNG
+  per gallery page into the app's files directory for visual review (see
+  [Previewing the whole family](#weather-icon-design-system)).
 
 ## Manual verification performed
 
@@ -362,7 +470,7 @@ Same emulator, real API traffic, screenshots in `app/build/verify/`:
 - Logcat after all of the above: no `FATAL EXCEPTION`, no application errors (only an
   informational Compose hidden-API note).
 
-### Home location switching, icon contrast and narrow rows (current iteration)
+### Home location switching, icon contrast and narrow rows
 
 Same emulator, real API traffic, screenshots `app/build/verify/h01…h09*.png`:
 
@@ -395,7 +503,7 @@ Same emulator, real API traffic, screenshots `app/build/verify/h01…h09*.png`:
   padding that keeps the last favourite clear of it all still behave as before, re-checked by the
   existing instrumented tests.
 
-### Readability, precipitation intensity and wind indicators (current iteration)
+### Readability, precipitation intensity and wind indicators
 
 Same emulator, real API traffic, screenshots `app/build/verify/v01…v15*.png`. The home location
 was set to **Ushuaia**, which the API currently reports with light drizzle, 30 km/h sustained
@@ -450,6 +558,43 @@ vector-content test, but no snowing location was opened on the device), a thunde
 location, font scales ≥ 1.5 on the hourly strip and the outlook rows, and the wind badge under
 TalkBack (the labels exist in the semantics tree, but no screen reader was run).
 
+### Flat Color weather icon family (current iteration)
+
+Same emulator (`Medium_Phone_API_37.0`, API 37, 1080×2400), real API traffic (home Uljanowsk,
+"Schneegriesel"). The debug gallery was rendered on the device by the debug screenshot test, once
+per theme (`adb shell cmd uimode night yes|no`), and the 20 pages per theme were pulled with
+`adb exec-out run-as com.example.weatherapp tar -c -C files/icon_gallery .`. The dashboard was
+captured in light and dark. All statements below come from looking at those images.
+
+- **One family, one grid.** In the light gallery the sun, crescent, partly cloudy and overcast
+  rows show the same cloud silhouette with its offset shadow at 24, 32, 48 and 72 dp, the sun with
+  its accent ring and eight rays, and the crescent opening to the lower left. Nothing shifts when
+  the size changes; only the palette changes between the light and the dark section.
+- **Intensity is a count, not a redraw.** Light/moderate/heavy rain show one, two and three
+  identical drops; light/moderate/heavy snow one, two and three identical flakes; snow grains
+  three dots; drizzle five dots; freezing rain one drop plus one flake; thunderstorm the bolt;
+  hail the bolt plus two dots. The marks are the same shape at every size and in every icon of a
+  family.
+- **The wind indicator behaves.** In the wind rows the glyph sits in the free upper end corner of
+  the symbol, at about a third of its size, without a background disc. It does not touch the sun,
+  the crescent, the cloud or any precipitation mark, and it stays legible at 24 dp (9 dp glyph).
+  Strong wind is neutral, storm is red, in both themes.
+- **Dark theme.** The dark pages show the identical geometry with the night palette: near-white
+  snow marks, lighter blue drops and clouds, brighter sun and moon; the marks are clearly visible
+  on the dark card.
+- **Header gradients.** The two gradient sections show the symbols as the hero card draws them.
+  Clouds with their shadow, the bolt, the snow marks and both wind colours read well; the blue
+  rain drops are the weakest element on the blue gradients (documented below).
+- **Dashboard, light and dark.** The 76 dp hero symbol, the hourly chips and the day card all use
+  the new family; the snow-grains hero shows cloud plus three dots, the chips show flake and dot
+  marks. No status strip appears below "Zuletzt aktualisiert", and no symbol is missing.
+- Logcat during the runs: no `FATAL EXCEPTION`, no resource-loading errors, no application
+  warnings — only the usual emulator-side notices and the test harness's own activity logging.
+
+Not verified in this iteration: TalkBack reading the new wind glyph labels, a live thunderstorm,
+hail or strong-wind day on the device (the gallery covers those states, the dashboard did not
+show them), font scales ≥ 1.5, tablets and physical devices.
+
 ## Known limitations
 
 - The app has no coarse/fine location permission: the home location is chosen by search
@@ -482,10 +627,29 @@ TalkBack (the labels exist in the semantics tree, but no screen reader was run).
 - The compact outlook rows grade their symbol from the **day's WMO code only**. A 24-hour
   precipitation sum never changes an icon or a label, because a daily total says nothing about a
   single hour — which is why a day can legitimately show one drop next to "66 % · 20 mm".
-- The wind badge is a static overlay in the corner of the weather symbol. It marks *that* a
-  threshold was exceeded and which measurement caused it; it is not an official weather warning,
-  has no duration or area, and is not de-duplicated against the DWD or Met Office warning
-  services.
+- The wind badge is a static glyph in the free upper end corner of the weather symbol, without a
+  background disc. It marks *that* a threshold was exceeded and which measurement caused it; it is
+  not an official weather warning, has no duration or area, and is not de-duplicated against the
+  DWD or Met Office warning services.
+- **Contrast on the header gradient is a deliberate trade-off.** The hero card draws its symbol on
+  a coloured gradient, and the blue precipitation tokens (`weather_rain`, `weather_hail`) reach
+  only about 1.3–1.6:1 there: the drops are recognisable as drops, but they are the weakest
+  element of a rainy header. The palette test checks every token against the shipped card and
+  window surfaces of both themes (≥ 1.5:1), not against the gradient, because a rain blue that
+  cleared 3:1 on the gradient would leave the flat palette and read as a different weather colour.
+- For the same reason the header uses its own wind palette: `HeaderStormRed` (`#FF6F60`) reaches
+  about 1.6–1.9:1 in the band the symbol occupies, while the neutral `HeaderWindStrong`
+  (`#D8E4EE`) stays above 4:1. A storm red that met 3:1 on those gradients would be a pale salmon
+  that no longer reads as a warning. The level is therefore also carried by the text
+  ("Sturmwarnung: …" in the hourly detail sheet) and by the accessibility label, and the unit test
+  asserts ≥ 3:1 for the neutral glyph and ≥ 1.5:1 plus "red is redder than green" for the storm
+  glyph on every header.
+- The icons are static, flat vectors: no animation, no gradient inside a symbol, and only the two
+  theme palettes. A new condition needs a new drawable plus a mapping entry; the mapping is
+  exhaustive and tested, so an unmapped state cannot appear.
+- The gallery exists only in the debug source set and its activity is not exported, so a visual
+  review of a release build has to go through the dashboard. The gallery PNGs written by the
+  screenshot test are review artefacts under `app/build/`, not part of the repository.
 - The weather symbol itself keeps the generic accessibility label "Wettersymbol" and the
   condition wording is separate text. Because that text was removed from the compact outlook
   rows, a screen reader there announces the weekday, the date, the precipitation numbers, both

@@ -7,7 +7,7 @@
     <string name="hourly_day_today">Heute</string>
     <string name="section_daily">Nächste zwei Tage</string>
     <string name="section_extended">Ausblick</string>
-    <string name="extended_hint">Ab Tag 4 wird die Vorhersage unsicherer. Die Werte dienen als Tendenz.</string>
+    <string name="extended_hint">Folgende Werte zeigen die Tendenz.</string>
     <string name="tomorrow">Morgen</string>
     <string name="day_after_tomorrow">Übermorgen</string>
 

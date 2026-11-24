@@ -89,5 +89,14 @@ val DarkWindIndicatorColors = WindIndicatorColors(
     storm = StormRedDark,
 )
 
+/**
+ * Wind indicator palette for symbols drawn on the coloured header gradient. That gradient keeps
+ * its mid to dark tones in both themes, so the indicator uses the lighter pair unconditionally.
+ */
+val HeaderWindIndicatorColors = WindIndicatorColors(
+    strong = HeaderWindStrong,
+    storm = HeaderStormRed,
+)
+
 /** Wind indicator palette of the theme that is currently active. */
 val LocalWindIndicatorColors = staticCompositionLocalOf { LightWindIndicatorColors }

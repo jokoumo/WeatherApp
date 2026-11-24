@@ -1,11 +1,14 @@
 package com.example.weatherapp.ui
 
+import android.content.res.Configuration
+import android.content.res.XmlResourceParser
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -28,6 +31,9 @@ import com.example.weatherapp.domain.model.CurrentWeather
 import com.example.weatherapp.domain.model.DailyWeather
 import com.example.weatherapp.domain.model.HourlyWeather
 import com.example.weatherapp.domain.model.PrecipitationClassifier
+import com.example.weatherapp.domain.model.PrecipitationFamily
+import com.example.weatherapp.domain.model.PrecipitationIntensity
+import com.example.weatherapp.domain.model.PrecipitationStyle
 import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.domain.model.WeatherCondition
 import com.example.weatherapp.domain.model.WindWarning
@@ -36,7 +42,12 @@ import com.example.weatherapp.ui.components.WeatherIcon
 import com.example.weatherapp.ui.dashboard.CurrentWeatherCard
 import com.example.weatherapp.ui.dashboard.ExtendedDayList
 import com.example.weatherapp.ui.dashboard.HourlyForecast
+import com.example.weatherapp.ui.theme.BackgroundDark
+import com.example.weatherapp.ui.theme.BackgroundLight
+import com.example.weatherapp.ui.theme.SurfaceDark
+import com.example.weatherapp.ui.theme.SurfaceLight
 import com.example.weatherapp.ui.theme.WeatherAppTheme
+import com.example.weatherapp.ui.weather.weatherIconRes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -46,6 +57,7 @@ import org.xmlpull.v1.XmlPullParser
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlin.math.pow
 
 /**
  * Layout tests for the parts of the dashboard that were refined: the detail labels of the hero
@@ -379,44 +391,245 @@ class WeatherPresentationUiTest {
     /**
      * The intensity of a symbol is the number of precipitation marks it draws. Reading the shipped
      * vector keeps this test honest about what the user actually sees: one, two or three drops and
-     * one, two or three flakes, always on the same cloud.
+     * one, two or three flakes, all drawn with one shared geometry.
      */
     @Test
-    fun rainAndSnowSymbolsDrawOneTwoOrThreePrecipitationMarks() {
-        listOf(
-            R.drawable.weather_rain_light,
-            R.drawable.weather_rain_moderate,
-            R.drawable.weather_rain_heavy,
-        ).forEachIndexed { index, id ->
-            assertEquals(index + 2, pathDataOf(id).size)
+    fun rainAndSnowSymbolsDrawOneTwoOrThreeIdenticalPrecipitationMarks() {
+        rainIcons.forEachIndexed { index, id ->
+            assertEquals(index + 1, marksOf(id).size)
         }
-        listOf(
-            R.drawable.weather_snow_light,
-            R.drawable.weather_snow_moderate,
-            R.drawable.weather_snow_heavy,
-        ).forEachIndexed { index, id ->
-            assertEquals(index + 2, pathDataOf(id).size)
+        snowIcons.forEachIndexed { index, id ->
+            assertEquals(index + 1, marksOf(id).size)
         }
-        // The cloud behind them is the same shape, so only the marks differ.
-        assertEquals(firstPath(R.drawable.weather_rain_light), firstPath(R.drawable.weather_rain_heavy))
-        assertEquals(firstPath(R.drawable.weather_snow_light), firstPath(R.drawable.weather_snow_heavy))
+        // Only the position changes: every rain icon reuses one drop, every snow icon one flake.
+        val drops = rainIcons.flatMap { marksOf(it) }
+        val flakes = snowIcons.flatMap { marksOf(it) }
+        assertEquals("all rain marks must share one drop geometry", 1, drops.map { shapeSignature(it.pathData) }.toSet().size)
+        assertEquals("all snow marks must share one flake geometry", 1, flakes.map { shapeSignature(it.pathData) }.toSet().size)
+        assertTrue("drops are filled shapes", drops.all { it.strokeColor == null })
+        assertTrue("flakes are stroked lines", flakes.all { it.strokeColor != null })
     }
 
-    private fun pathDataOf(id: Int): List<String> {
+    /**
+     * Consistency of the family: one viewport, and one cloud silhouette that every cloudy icon
+     * draws more than once (directly, as the offset shadow and, when the sky is overcast, as the
+     * secondary cloud behind). A redesign that moves the cloud in a single icon fails here.
+     */
+    @Test
+    fun everyCloudyIconReusesTheSameViewportAndTheSameCloudSilhouette() {
+        val silhouettes = cloudyIcons.map { id ->
+            val counts = vectorOf(id).shapes.groupingBy { it.pathData }.eachCount()
+            val silhouette = counts.maxByOrNull { it.value }
+            assertTrue(
+                "the cloud of $id has to be drawn as a silhouette and as a shadow",
+                silhouette != null && silhouette.value >= 2,
+            )
+            checkNotNull(silhouette).key
+        }.toSet()
+        assertEquals("the cloud must be one and the same silhouette everywhere", 1, silhouettes.size)
+        allWeatherIcons.forEach { id ->
+            val vector = vectorOf(id)
+            assertTrue("icon $id must use the shared 48x48 viewport", vector.width == 48f)
+            assertTrue("icon $id must use the shared 48x48 viewport", vector.height == 48f)
+        }
+    }
+
+    /**
+     * No weather state may end up without a symbol. Every condition combined with every intensity
+     * the presentation can produce has to resolve to a resource that really loads.
+     */
+    @Test
+    fun everyWeatherStateResolvesToAnIconThatLoads() {
+        val styles = PrecipitationFamily.entries.flatMap { family ->
+            (listOf<PrecipitationIntensity?>(null) + PrecipitationIntensity.entries)
+                .map { intensity -> PrecipitationStyle(family, intensity) }
+        }
+        WeatherCondition.entries.forEach { condition ->
+            val resolved = buildList {
+                add(PrecipitationClassifier.classify(condition))
+                addAll(styles)
+            }
+            resolved.forEach { style ->
+                val res = weatherIconRes(condition, style)
+                assertTrue("no icon for $condition with $style", res != 0)
+                assertTrue("icon $res of $condition cannot be loaded", context.getDrawable(res) != null)
+            }
+        }
+        assertTrue(
+            "the wind glyph must load on its own",
+            context.getDrawable(R.drawable.weather_wind) != null,
+        )
+    }
+
+    /**
+     * The palette belongs to the design system: each colour token of the icon family has to stay
+     * visible on the surfaces the application actually paints, in the light and in the dark theme,
+     * without the geometry changing.
+     */
+    @Test
+    fun everyIconColourStaysVisibleOnTheShippedLightAndDarkSurfaces() {
+        listOf(false, true).forEach { night ->
+            val configuration = Configuration(context.resources.configuration)
+            configuration.uiMode = if (night) {
+                Configuration.UI_MODE_NIGHT_YES or Configuration.UI_MODE_TYPE_NORMAL
+            } else {
+                Configuration.UI_MODE_NIGHT_NO or Configuration.UI_MODE_TYPE_NORMAL
+            }
+            val themed = context.createConfigurationContext(configuration)
+            val surfaces = if (night) {
+                listOf(SurfaceDark, BackgroundDark)
+            } else {
+                listOf(SurfaceLight, BackgroundLight)
+            }
+            iconColourTokens.forEach { token ->
+                val colour = Color(themed.getColor(token))
+                val name = themed.resources.getResourceName(token)
+                surfaces.forEach { surface ->
+                    val ratio = contrastRatio(colour, surface)
+                    assertTrue(
+                        "$name needs 1.5:1 on $surface, was ${ratio.format()}",
+                        ratio >= 1.5,
+                    )
+                }
+            }
+        }
+    }
+
+    private data class VectorShape(
+        val pathData: String,
+        val fillColor: String?,
+        val strokeColor: String?,
+    )
+
+    private data class VectorFile(val width: Float, val height: Float, val shapes: List<VectorShape>)
+
+    private fun vectorOf(id: Int): VectorFile {
         val parser = context.resources.getXml(id)
-        val paths = mutableListOf<String>()
+        val shapes = mutableListOf<VectorShape>()
+        var width = 0f
+        var height = 0f
         var event = parser.next()
         while (event != XmlPullParser.END_DOCUMENT) {
-            if (event == XmlPullParser.START_TAG && parser.name == "path") {
-                paths += parser.getAttributeValue(null, "pathData").orEmpty()
+            if (event == XmlPullParser.START_TAG) {
+                when (parser.name) {
+                    "vector" -> {
+                        width = attributeOf(parser, "viewportWidth")?.toFloatOrNull() ?: 0f
+                        height = attributeOf(parser, "viewportHeight")?.toFloatOrNull() ?: 0f
+                    }
+                    "path" -> shapes += VectorShape(
+                        pathData = attributeOf(parser, "pathData").orEmpty(),
+                        fillColor = attributeOf(parser, "fillColor"),
+                        strokeColor = attributeOf(parser, "strokeColor"),
+                    )
+                }
             }
             event = parser.next()
         }
-        return paths
+        check(shapes.isNotEmpty()) { "icon $id does not contain a single path" }
+        return VectorFile(width, height, shapes)
     }
 
-    private fun firstPath(id: Int): String = pathDataOf(id).first()
+    /**
+     * Reads an attribute by its plain name. The resources of an installed build are compiled, so
+     * the drawable attributes carry the android namespace and cannot be looked up without it.
+     */
+    private fun attributeOf(parser: XmlResourceParser, name: String): String? {
+        for (index in 0 until parser.attributeCount) {
+            if (parser.getAttributeName(index) == name) return parser.getAttributeValue(index)
+        }
+        return null
+    }
+
+    /**
+     * The precipitation marks of an icon: every path that is not the cloud silhouette, which is
+     * the only path an icon draws twice (directly and as the offset shadow).
+     */
+    private fun marksOf(id: Int): List<VectorShape> {
+        val shapes = vectorOf(id).shapes
+        val counts = shapes.groupingBy { it.pathData }.eachCount()
+        return shapes.filter { counts.getValue(it.pathData) == 1 }
+    }
+
+    /**
+     * Translation invariant signature of a path: its command letters and the number of numeric
+     * arguments. Two drops side by side share it, a differently shaped mark does not.
+     */
+    private fun shapeSignature(pathData: String): String =
+        pathData.filter(Char::isLetter) + "#" + NUMBER_PATTERN.findAll(pathData).count()
+
+    private fun contrastRatio(foreground: Color, background: Color): Double {
+        val first = luminance(foreground)
+        val second = luminance(background)
+        return (maxOf(first, second) + 0.05) / (minOf(first, second) + 0.05)
+    }
+
+    private fun luminance(color: Color): Double {
+        fun channel(value: Float): Double {
+            val component = value.toDouble()
+            return if (component <= 0.03928) component / 12.92 else ((component + 0.055) / 1.055).pow(2.4)
+        }
+        return 0.2126 * channel(color.red) + 0.7152 * channel(color.green) + 0.0722 * channel(color.blue)
+    }
+
+    private fun Double.format(): String = String.format(java.util.Locale.ROOT, "%.2f", this)
 
     /** Rounds a pixel bound so that sub pixel differences do not fail the comparison. */
     private fun quantise(value: Float): Long = (value * 10).toLong()
+
+    private companion object {
+        val NUMBER_PATTERN = Regex("[-+]?[0-9]*\\.?[0-9]+")
+
+        val rainIcons = listOf(
+            R.drawable.weather_rain_light,
+            R.drawable.weather_rain_moderate,
+            R.drawable.weather_rain_heavy,
+        )
+        val snowIcons = listOf(
+            R.drawable.weather_snow_light,
+            R.drawable.weather_snow_moderate,
+            R.drawable.weather_snow_heavy,
+        )
+        val cloudyIcons = listOf(
+            R.drawable.weather_cloudy,
+            R.drawable.weather_overcast,
+            R.drawable.weather_partly_cloudy_day,
+            R.drawable.weather_partly_cloudy_night,
+            R.drawable.weather_drizzle,
+            R.drawable.weather_fog,
+            R.drawable.weather_sleet,
+            R.drawable.weather_snow_grains,
+            R.drawable.weather_thunderstorm,
+            R.drawable.weather_hail,
+        ) + rainIcons + snowIcons
+
+        val iconColourTokens = listOf(
+            R.color.weather_sun,
+            R.color.weather_sun_accent,
+            R.color.weather_cloud,
+            R.color.weather_cloud_shadow,
+            R.color.weather_cloud_secondary,
+            R.color.weather_rain,
+            R.color.weather_snow,
+            R.color.weather_hail,
+            R.color.weather_moon,
+            R.color.weather_lightning,
+            R.color.weather_fog,
+        )
+
+        val allWeatherIcons = listOf(
+            R.drawable.weather_clear_day,
+            R.drawable.weather_clear_night,
+            R.drawable.weather_partly_cloudy_day,
+            R.drawable.weather_partly_cloudy_night,
+            R.drawable.weather_cloudy,
+            R.drawable.weather_overcast,
+            R.drawable.weather_drizzle,
+            R.drawable.weather_fog,
+            R.drawable.weather_sleet,
+            R.drawable.weather_snow_grains,
+            R.drawable.weather_thunderstorm,
+            R.drawable.weather_hail,
+            R.drawable.weather_wind,
+        ) + rainIcons + snowIcons
+    }
 }

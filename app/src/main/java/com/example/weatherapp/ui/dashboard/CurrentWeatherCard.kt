@@ -30,6 +30,7 @@ import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.domain.model.WindWarning
 import com.example.weatherapp.ui.components.StackedDetail
 import com.example.weatherapp.ui.components.WeatherIcon
+import com.example.weatherapp.ui.theme.HeaderWindIndicatorColors
 import com.example.weatherapp.ui.theme.OnHeader
 import com.example.weatherapp.ui.theme.OnHeaderMuted
 import com.example.weatherapp.ui.weather.headerGradient
@@ -102,7 +103,7 @@ fun CurrentWeatherCard(
                     precipitation = current?.precipitationStyle ?: PrecipitationStyle.NONE,
                     windWarning = current?.windWarning ?: WindWarning.NONE,
                     size = 76.dp,
-                    backingColor = OnHeader,
+                    windIndicatorColors = HeaderWindIndicatorColors,
                 )
             }
 

@@ -1,12 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Flat Color weather icon. Shared 48x48 geometry and palette: see the "Weather icon
+     design system" section of README.md. Never resize a single element of one icon. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <group>
-        <path android:pathData="M7.2,15.2 C4.4,15.2 2.2,13.1 2.2,10.5 C2.2,8.2 4.0,6.3 6.3,6.1 C7.0,3.6 9.4,1.8 12.2,1.8 C15.3,1.8 17.9,4.0 18.4,6.9 C20.4,7.4 21.8,9.2 21.8,11.2 C21.8,13.4 20.0,15.2 17.8,15.2 Z" android:fillColor="#9FB3C8"/>
-        <path android:pathData="M7,17.4 L7,21.8 M5.095,18.5 L8.905,20.7 M5.095,20.7 L8.905,18.5" android:strokeColor="#4A8CC7" android:strokeWidth="1.8" android:strokeLineCap="round"/>
-        <path android:pathData="M12,17.4 L12,21.8 M10.095,18.5 L13.905,20.7 M10.095,20.7 L13.905,18.5" android:strokeColor="#4A8CC7" android:strokeWidth="1.8" android:strokeLineCap="round"/>
-        <path android:pathData="M17,17.4 L17,21.8 M15.095,18.5 L18.905,20.7 M15.095,20.7 L18.905,18.5" android:strokeColor="#4A8CC7" android:strokeWidth="1.8" android:strokeLineCap="round"/>
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <group android:translateY="2">
+        <path android:pathData="M12,19a6,6 0 1,1 0,12a6,6 0 1,1 0,-12z M20.5,8.5a9.5,9.5 0 1,1 0,19a9.5,9.5 0 1,1 0,-19z M31,17a7,7 0 1,1 0,14a7,7 0 1,1 0,-14z M12,25h19v6h-19z" android:fillColor="@color/weather_cloud_shadow" />
     </group>
+    <path android:pathData="M12,19a6,6 0 1,1 0,12a6,6 0 1,1 0,-12z M20.5,8.5a9.5,9.5 0 1,1 0,19a9.5,9.5 0 1,1 0,-19z M31,17a7,7 0 1,1 0,14a7,7 0 1,1 0,-14z M12,25h19v6h-19z" android:fillColor="@color/weather_cloud" />
+    <path android:pathData="M11,35.3L11,43.1M7.62,37.25L14.38,41.15M7.62,41.15L14.38,37.25" android:strokeColor="@color/weather_snow" android:strokeWidth="2.2" android:strokeLineCap="round" />
+    <path android:pathData="M22,35.3L22,43.1M18.62,37.25L25.38,41.15M18.62,41.15L25.38,37.25" android:strokeColor="@color/weather_snow" android:strokeWidth="2.2" android:strokeLineCap="round" />
+    <path android:pathData="M33,35.3L33,43.1M29.62,37.25L36.38,41.15M29.62,41.15L36.38,37.25" android:strokeColor="@color/weather_snow" android:strokeWidth="2.2" android:strokeLineCap="round" />
 </vector>

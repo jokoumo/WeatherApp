@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Dark theme variants of the weather icon palette. The geometry of every icon is identical in
+    both themes; only these colour tokens change, so clouds, snow and fog stay readable on the
+    dark surfaces while keeping the same visual weight as in the light theme.
+-->
+<resources>
+    <color name="weather_sun">#FFD166</color>
+    <color name="weather_sun_accent">#FFB347</color>
+    <color name="weather_cloud">#A8BED1</color>
+    <color name="weather_cloud_shadow">#7898B5</color>
+    <color name="weather_cloud_secondary">#C3D5E4</color>
+    <color name="weather_rain">#4FA8EC</color>
+    <color name="weather_snow">#D5F0FF</color>
+    <color name="weather_hail">#CFE9FA</color>
+    <color name="weather_moon">#FFE3A3</color>
+    <color name="weather_lightning">#FFD54F</color>
+    <color name="weather_fog">#91A6B8</color>
+</resources>

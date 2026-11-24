@@ -261,8 +261,13 @@ class DashboardScreenTest {
             .assertIsDisplayed()
     }
 
+    /**
+     * Cached data is presented exactly like live data: the dashboard shows the snapshot and its
+     * update line, and the status strip that used to label the source stays away. The test keeps
+     * asserting the label is absent so the removed card cannot creep back in.
+     */
     @Test
-    fun cachedDataIsLabelledAsSavedData() {
+    fun cachedDataIsShownWithoutAStatusStrip() {
         val base = stateWith()
         val cached = base.copy(
             weather = base.weather.copy(
@@ -271,6 +276,9 @@ class DashboardScreenTest {
         )
         render(cached)
 
-        composeRule.onNodeWithText(context.getString(R.string.status_cached)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.section_hourly)).assertIsDisplayed()
+        val updateLine = context.getString(R.string.last_updated).substringBefore(":")
+        composeRule.onNodeWithText(updateLine, substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.status_cached)).assertDoesNotExist()
     }
 }
