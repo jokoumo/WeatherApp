@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Flat Color weather icon. Shared 48x48 geometry and palette: see the "Weather icon
+     design system" section of README.md. Never resize a single element of one icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <group
+        android:scaleX="0.72" android:scaleY="0.72"
+        android:pivotX="22" android:pivotY="24"
+        android:translateX="-8" android:translateY="-10">
+        <path android:pathData="M31.7,28.02L33.27,28.67 M26.02,33.7L26.67,35.27 M17.98,33.7L17.33,35.27 M12.3,28.02L10.73,28.67 M12.3,19.98L10.73,19.33 M17.98,14.3L17.33,12.73 M26.02,14.3L26.67,12.73 M31.7,19.98L33.27,19.33" android:strokeColor="@color/weather_sun_accent" android:strokeWidth="2.6" android:strokeLineCap="round" />
+        <path android:pathData="M22,17a8.5,8.5 0 1,1 0,17a8.5,8.5 0 1,1 0,-17z" android:fillColor="@color/weather_sun_accent" />
+        <path android:pathData="M22,15.5a8.5,8.5 0 1,1 0,17a8.5,8.5 0 1,1 0,-17z" android:fillColor="@color/weather_sun" />
+    </group>
+    <group android:translateY="2">
+        <path android:pathData="M12,19a6,6 0 1,1 0,12a6,6 0 1,1 0,-12z M20.5,8.5a9.5,9.5 0 1,1 0,19a9.5,9.5 0 1,1 0,-19z M31,17a7,7 0 1,1 0,14a7,7 0 1,1 0,-14z M12,25h19v6h-19z" android:fillColor="@color/weather_cloud_shadow" />
+    </group>
+    <path android:pathData="M12,19a6,6 0 1,1 0,12a6,6 0 1,1 0,-12z M20.5,8.5a9.5,9.5 0 1,1 0,19a9.5,9.5 0 1,1 0,-19z M31,17a7,7 0 1,1 0,14a7,7 0 1,1 0,-14z M12,25h19v6h-19z" android:fillColor="@color/weather_cloud" />
+</vector>

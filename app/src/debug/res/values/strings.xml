@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only resources: the icon gallery screen never reaches a release build. -->
+<resources>
+    <string name="gallery_activity_label">Symbolvorschau</string>
+</resources>

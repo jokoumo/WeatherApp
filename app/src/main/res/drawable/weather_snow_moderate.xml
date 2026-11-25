@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Flat Color weather icon. Shared 48x48 geometry and palette: see the "Weather icon
+     design system" section of README.md. Never resize a single element of one icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <group android:translateY="2">
+        <path android:pathData="M12,19a6,6 0 1,1 0,12a6,6 0 1,1 0,-12z M20.5,8.5a9.5,9.5 0 1,1 0,19a9.5,9.5 0 1,1 0,-19z M31,17a7,7 0 1,1 0,14a7,7 0 1,1 0,-14z M12,25h19v6h-19z" android:fillColor="@color/weather_cloud_shadow" />
+    </group>
+    <path android:pathData="M12,19a6,6 0 1,1 0,12a6,6 0 1,1 0,-12z M20.5,8.5a9.5,9.5 0 1,1 0,19a9.5,9.5 0 1,1 0,-19z M31,17a7,7 0 1,1 0,14a7,7 0 1,1 0,-14z M12,25h19v6h-19z" android:fillColor="@color/weather_cloud" />
+    <path android:pathData="M16.5,35.3L16.5,43.1M13.12,37.25L19.88,41.15M13.12,41.15L19.88,37.25" android:strokeColor="@color/weather_snow" android:strokeWidth="2.2" android:strokeLineCap="round" />
+    <path android:pathData="M27.5,35.3L27.5,43.1M24.12,37.25L30.88,41.15M24.12,41.15L30.88,37.25" android:strokeColor="@color/weather_snow" android:strokeWidth="2.2" android:strokeLineCap="round" />
+</vector>
