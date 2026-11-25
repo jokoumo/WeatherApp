@@ -3,6 +3,7 @@ package com.example.weatherapp.ui.locations
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,7 +26,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -33,10 +33,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -71,15 +70,16 @@ import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.ui.SearchUiState
 import com.example.weatherapp.ui.UserMessage
 import com.example.weatherapp.ui.components.InfoNote
+import com.example.weatherapp.ui.components.SecondaryScreenHeader
 import com.example.weatherapp.ui.messageRes
 import com.example.weatherapp.ui.weather.messageRes
 
 /**
- * Full screen location management: the title and the search field stay fixed at the top, the
- * saved locations live in a list that scrolls on its own, and search suggestions are shown in a
- * dropdown that floats over that list. The layout therefore never grows or shifts when favourites
- * or results are added, which the previous bottom sheet did. A floating button returns to the
- * dashboard.
+ * Full screen location management: the navigation header and the search field stay fixed at the
+ * top, the saved locations live in a list that scrolls on its own, and search suggestions are
+ * shown in a dropdown that floats over that list. The layout therefore never grows or shifts
+ * when favourites or results are added, which the previous bottom sheet did. Navigation uses the
+ * same top-left back arrow as every other secondary screen.
  */
 @Composable
 fun LocationManagerScreen(
@@ -124,26 +124,26 @@ fun LocationManagerScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .pointerInput(Unit) { detectTapGestures(onTap = { }) }
             .onGloballyPositioned { coordinates -> containerBounds = coordinates.boundsInRoot() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .safeDrawingPadding()
-                .imePadding()
-                .padding(horizontal = 20.dp),
+                .imePadding(),
         ) {
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = stringResource(R.string.locations_screen_title),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+            SecondaryScreenHeader(
+                title = stringResource(R.string.locations_screen_title),
+                onBack = onDismiss,
+                modifier = Modifier.padding(start = 8.dp, end = 16.dp, top = 8.dp),
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = stringResource(R.string.locations_add_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp),
             )
             Spacer(Modifier.height(16.dp))
             LocationSearchField(
@@ -151,6 +151,7 @@ fun LocationManagerScreen(
                 onQueryChange = onQueryChange,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
                     .onGloballyPositioned { coordinates -> fieldBounds = coordinates.boundsInRoot() },
             )
             Spacer(Modifier.height(16.dp))
@@ -158,6 +159,7 @@ fun LocationManagerScreen(
                 text = stringResource(R.string.locations_title),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 20.dp),
             )
             Spacer(Modifier.height(8.dp))
             // The list sits directly on the painted background rather than inside a Material
@@ -174,7 +176,8 @@ fun LocationManagerScreen(
                     onDismiss = onDismiss,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .weight(1f)
+                        .padding(horizontal = 20.dp),
                 )
             }
         }
@@ -194,29 +197,6 @@ fun LocationManagerScreen(
             )
         }
 
-        // The floating button is hidden while the keyboard is up so that the search field and the
-        // suggestions stay easy to reach; it comes back as soon as the keyboard closes.
-        if (imeBottom == 0) {
-            FloatingActionButton(
-                onClick = {
-                    if (suggestionsOpen) onQueryChange("")
-                    onDismiss()
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(start = 20.dp, bottom = 20.dp),
-                shape = CircleShape,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.action_back_to_weather),
-                )
-            }
-        }
-
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
@@ -225,7 +205,7 @@ fun LocationManagerScreen(
                 // Feedback such as "already saved" appears while the keyboard is still open, so the
                 // message has to sit above it instead of behind it.
                 .imePadding()
-                .padding(bottom = 16.dp, start = 84.dp, end = 8.dp),
+                .padding(horizontal = 8.dp, vertical = 16.dp),
         )
     }
 }
@@ -246,8 +226,8 @@ private fun SavedLocationsList(
     LazyColumn(
         modifier = modifier,
         state = listState,
-        // Bottom padding keeps the last favourite clear of the floating button: it is scrollable
-        // content space, not a permanent empty footer.
+        // A little scrollable space below the last favourite so it never sits flush against the
+        // bottom edge; it is content space, not a permanent empty footer.
         contentPadding = PaddingValues(bottom = FAVORITES_BOTTOM_SPACE),
     ) {
         item { SectionLabel(stringResource(R.string.locations_home)) }
@@ -523,8 +503,8 @@ internal fun locationActionColor(
  * first favourite. */
 internal const val DISABLED_ACTION_ALPHA = 0.38f
 
-/** Scrollable bottom space that keeps the last favourite clear of the floating button. */
-private val FAVORITES_BOTTOM_SPACE = 96.dp
+/** Small scrollable bottom space so the last favourite never sits flush against the edge. */
+private val FAVORITES_BOTTOM_SPACE = 24.dp
 
 /** Four 48 dp icon buttons plus the gap in front of them, as needed by [LocationListItem]. */
 private val FAVORITE_ACTIONS_WIDTH = 48.dp * 4 + 8.dp

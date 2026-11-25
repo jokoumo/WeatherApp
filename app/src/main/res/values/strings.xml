@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Wetter</string>
+    <string name="app_name">WetterPlus</string>
 
     <!-- Dashboard sections -->
     <string name="section_hourly">Nächste 24 Stunden</string>
@@ -109,9 +109,68 @@
     <string name="action_move_down">Nach unten verschieben</string>
     <string name="action_select_location">Anzeigen</string>
     <string name="locations_screen_title">Orte verwalten</string>
-    <string name="action_back_to_weather">Zurück zum Wetter</string>
+    <string name="action_back">Zurück</string>
     <string name="action_add_favorite">Als Favorit hinzufügen</string>
     <string name="message_location_duplicate">Dieser Ort ist bereits gespeichert.</string>
     <string name="message_location_added">Ort hinzugefügt.</string>
     <string name="message_home_location_set">Startseite aktualisiert.</string>
+
+    <!-- Navigation and settings -->
+    <string name="action_settings">Einstellungen</string>
+    <string name="settings_screen_title">Einstellungen</string>
+    <string name="settings_appearance_title">Darstellung</string>
+    <string name="settings_appearance_summary">Hell, Dunkel oder Systemeinstellung</string>
+    <string name="settings_about_title">Infos</string>
+    <string name="settings_about_summary">Version, Wetterdaten und Lizenzen</string>
+
+    <!-- Appearance settings -->
+    <string name="appearance_screen_title">Darstellung</string>
+    <string name="appearance_intro">Die Auswahl gilt für alle Seiten der App und wird dauerhaft gespeichert.</string>
+    <string name="theme_mode_system">Systemeinstellung</string>
+    <string name="theme_mode_light">Hell</string>
+    <string name="theme_mode_dark">Dunkel</string>
+    <string name="theme_mode_system_summary">Die App folgt dem Hell- und Dunkelmodus des Systems.</string>
+    <string name="theme_mode_light_summary">Die App bleibt hell, auch wenn das System auf Dunkel wechselt.</string>
+    <string name="theme_mode_dark_summary">Die App bleibt dunkel, auch wenn das System auf Hell wechselt.</string>
+    <string name="theme_persistence_failed">Die Auswahl konnte nicht dauerhaft gespeichert werden. Sie gilt bis zum Neustart der App.</string>
+
+    <!-- About screen -->
+    <string name="about_screen_title">Infos</string>
+    <string name="about_section_application">Anwendung</string>
+    <string name="about_version_label">Version</string>
+    <string name="about_build_label">Build</string>
+    <string name="about_value_unknown">Unbekannt</string>
+    <string name="about_section_sources">Wetterdaten und Dienste</string>
+    <string name="about_source_forecast_title">Open-Meteo Vorhersage-API</string>
+    <string name="about_source_forecast_summary">Aktuelle Werte, Stunden- und Tagesvorhersage für jeden Ort, abgerufen über HTTPS ohne API-Schlüssel.</string>
+    <string name="about_source_geocoding_title">Open-Meteo Geocoding-API</string>
+    <string name="about_source_geocoding_summary">Ortssuche nach Name; liefert Koordinaten, Zeitzone und Verwaltungseinheiten.</string>
+    <string name="about_source_models_title">Wettermodelle im Hintergrund</string>
+    <string name="about_source_models_summary">Open-Meteo wählt je Ort automatisch das passende Modell (Standard „best_match“). Grundlage sind meist DWD ICON, NOAA GFS und ECMWF IFS, zusätzlich regionale Modelle. Welches Modell tatsächlich liefert, hängt vom Ort ab und steht in der Antwort der API.</string>
+    <string name="about_source_geonames_title">Ortsdatenbank GeoNames</string>
+    <string name="about_source_geonames_summary">Namen, Koordinaten und Zeitzonen der Ortssuche stammen aus der GeoNames-Datenbank.</string>
+    <string name="about_data_attribution">Wetterdaten von Open-Meteo.com</string>
+    <string name="about_section_licenses">Lizenzen und Hinweise</string>
+    <string name="about_license_link_hint">Im Browser öffnen</string>
+    <string name="about_license_holder">Urheber: %1$s</string>
+    <string name="about_license_name">Lizenz: %1$s</string>
+    <string name="about_license_components_title">Enthaltene Bausteine</string>
+    <string name="about_license_offline_note">Diese Angaben sind auch ohne Internetverbindung lesbar. Den vollständigen Lizenztext öffnet die App im Browser.</string>
+
+    <!-- Licence and attribution details -->
+    <string name="licence_open_meteo_title">Wetterdaten von Open-Meteo</string>
+    <string name="licence_open_meteo_name">CC BY 4.0</string>
+    <string name="licence_open_meteo_summary">Die über die API abgerufenen Wetterwerte stehen unter der Creative-Commons-Lizenz „Namensnennung 4.0 International“. Namensnennung: „Weather data by Open-Meteo.com“ mit Link auf open-meteo.com, direkt dort, wo Wetterdaten angezeigt werden – dieser Hinweis befindet sich auf dieser Seite. Die Rohdaten stammen von nationalen Wetterdiensten (u. a. Deutscher Wetterdienst, ECMWF, NOAA NCEP, Météo-France, UK Met Office), deren eigene Lizenzen offen sind.</string>
+    <string name="licence_geonames_title">Ortsdaten GeoNames</string>
+    <string name="licence_geonames_name">CC BY 4.0</string>
+    <string name="licence_geonames_summary">Die Ortsdaten der Suche stammen aus der GeoNames-Datenbank und stehen ebenfalls unter „Creative Commons Namensnennung 4.0 International“. Open-Meteo stellt diese Daten über seine Geocoding-API bereit.</string>
+    <string name="licence_libraries_title">Verwendete Bibliotheken</string>
+    <string name="licence_libraries_name">Apache License 2.0</string>
+    <string name="licence_libraries_summary">Alle genannten Bibliotheken stehen unter der Apache License 2.0. Sie darf Nutzung, Veränderung und Weitergabe zu jedem Zweck, auch kommerziell, solange der Lizenztext und die Urheberangaben beibehalten werden. Der vollständige Text ist unter apache.org/licenses/LICENSE-2.0 verfügbar.</string>
+    <string name="licence_protobuf_title">protobuf-javalite (in AndroidX DataStore)</string>
+    <string name="licence_protobuf_name">BSD 3-Clause</string>
+    <string name="licence_protobuf_summary">AndroidX DataStore enthält eine eigene Kopie der kleinen protobuf-Laufzeitumgebung. Sie steht unter der BSD-3-Clause-Lizenz: freie Nutzung und Weitergabe, solange der Copyright-Hinweis, die Bedingungen und der Haftungsausschluss mitgegeben werden.</string>
+    <string name="licence_icons_title">Wetter- und App-Symbole</string>
+    <string name="licence_icons_name">Eigene Erstellung</string>
+    <string name="licence_icons_summary">Die Wettersymbole, das App-Symbol und das Symbol für die Darstellungseinstellung als Vektorgrafiken wurden für dieses Projekt gezeichnet. Sie sind keine Dritten-Assets und stammen aus keiner Icon-Bibliothek. Die App enthält außerdem keine Schriftarten, keine Bildbibliothek und keine Emoji-Assets.</string>
 </resources>

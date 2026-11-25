@@ -49,9 +49,10 @@ import org.junit.runner.RunWith
 import retrofit2.Response
 
 /**
- * Interaction tests for the full screen location manager: the fixed title and search field, the
- * favourites list that scrolls on its own, the floating suggestion dropdown and the floating back
- * button. The state wiring mirrors the dashboard, and the search is a deterministic fake.
+ * Interaction tests for the full screen location manager: the navigation header with its top-left
+ * back arrow, the fixed search field, the favourites list that scrolls on its own and the floating
+ * suggestion dropdown. The state wiring mirrors the dashboard, and the search is a deterministic
+ * fake.
  */
 @RunWith(AndroidJUnit4::class)
 class LocationManagerScreenTest {
@@ -176,7 +177,7 @@ class LocationManagerScreenTest {
         composeRule.onNode(hasSetTextAction()).assertIsDisplayed()
         composeRule.onNodeWithText(hamburg.name).assertIsDisplayed()
         composeRule.onNodeWithText(berlin.name).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back_to_weather))
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back))
             .assertIsDisplayed()
     }
 
@@ -195,24 +196,46 @@ class LocationManagerScreenTest {
         composeRule.onNodeWithText(hamburg.name).assertDoesNotExist()
     }
 
+    /**
+     * The floating back button and the scroll space that kept rows clear of it are gone: after
+     * scrolling, the last favourite ends close to the bottom edge instead of stopping in front of
+     * an overlay, and it stays tappable.
+     */
     @Test
-    fun lastFavouriteScrollsClearOfTheFloatingBackButton() {
+    fun lastFavouriteEndsNearTheBottomEdgeWithoutAnOverlay() {
         renderManager(initialFavorites = (1..20).map { favorite(it) })
 
         composeRule.onNode(hasScrollToKeyAction()).performScrollToKey("fav-20")
 
         val lastRow = composeRule.onNodeWithText("Ort 20").fetchSemanticsNode().boundsInWindow
-        val button = composeRule
-            .onNodeWithContentDescription(context.getString(R.string.action_back_to_weather))
-            .fetchSemanticsNode()
-            .boundsInWindow
+        val screen = composeRule.onRoot().fetchSemanticsNode().boundsInWindow
 
         composeRule.onNodeWithText("Ort 20").assertIsDisplayed()
+        assertTrue("last favourite is below the viewport", lastRow.bottom <= screen.bottom)
+        // The old footer kept the last row about 96 dp above the edge; now it may come close.
         assertTrue(
-            "last favourite ends at ${lastRow.bottom}, back button starts at ${button.top}",
-            lastRow.bottom <= button.top,
+            "last favourite stops far above the bottom edge: ${screen.bottom - lastRow.bottom}px",
+            screen.bottom - lastRow.bottom < 160f,
         )
-        assertTrue("back button height ${button.height}", button.height >= minTouchTargetPx())
+    }
+
+    /**
+     * Navigation is a plain toolbar action now: exactly one back arrow, top left, at least one
+     * 48 dp touch target, and nothing floating over the favourites list.
+     */
+    @Test
+    fun backArrowIsASingleTopLeftToolbarAction() {
+        renderManager(initialFavorites = (1..20).map { favorite(it) })
+
+        val label = context.getString(R.string.action_back)
+        composeRule.onAllNodesWithContentDescription(label).assertCountEquals(1)
+
+        val arrow = composeRule.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInWindow
+        val screen = composeRule.onRoot().fetchSemanticsNode().boundsInWindow
+        assertTrue("back arrow top ${arrow.top} is not in the header area", arrow.top < screen.height * 0.15f)
+        assertTrue("back arrow left ${arrow.left} is not at the screen edge", arrow.left < 200f)
+        assertTrue("back arrow touch target ${arrow.height}", arrow.height >= minTouchTargetPx())
+        assertTrue("back arrow touch target ${arrow.width}", arrow.width >= minTouchTargetPx())
     }
 
     @Test
@@ -316,11 +339,10 @@ class LocationManagerScreenTest {
     }
 
     @Test
-    fun floatingButtonReturnsToTheDashboard() {
+    fun backArrowReturnsToTheDashboard() {
         val harness = renderManager()
 
-        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back_to_weather))
-            .performClick()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back)).performClick()
 
         assertTrue(harness.dismissed)
     }

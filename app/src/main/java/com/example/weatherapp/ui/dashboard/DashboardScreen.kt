@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,17 +43,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.weatherapp.R
-import com.example.weatherapp.data.repository.SnapshotSource
 import com.example.weatherapp.domain.HourlyWindowEntry
 import com.example.weatherapp.domain.WeatherFormatter
 import com.example.weatherapp.domain.model.DataLoadFailure
 import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.ui.MainUiState
 import com.example.weatherapp.ui.WeatherUiState
-import com.example.weatherapp.ui.components.InfoNote
 import com.example.weatherapp.ui.components.LoadingPlaceholder
 import com.example.weatherapp.ui.components.SectionHeader
-import com.example.weatherapp.ui.locations.LocationManagerScreen
 import com.example.weatherapp.ui.messageRes
 import com.example.weatherapp.ui.weather.messageRes
 import java.time.Instant
@@ -62,32 +60,31 @@ import java.time.LocalDate
  * Main screen: current conditions, the rolling 24 hour forecast, the next two days in detail
  * and the compact outlook for the remaining forecast days. Content is refreshed by pulling
  * down or by the toolbar button.
+ *
+ * The toolbar carries the application name, not the location: the selected location is already
+ * the headline of the current weather card, so the toolbar stays free for the three actions
+ * refresh, locations and settings.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     state: MainUiState,
     onRefresh: () -> Unit,
-    onSelectLocation: (String) -> Unit,
-    onSetHomeLocation: (SavedLocation) -> Unit,
-    onAddFavorite: (SavedLocation) -> Unit,
-    onRemoveLocation: (String) -> Unit,
-    onMoveFavorite: (String, Int) -> Unit,
-    onSearchQueryChange: (String) -> Unit,
+    onOpenLocations: () -> Unit,
+    onOpenSettings: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val weather = state.weather
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedEntry by remember { mutableStateOf<HourlyWindowEntry?>(null) }
-    var showLocationManager by remember { mutableStateOf(false) }
     val message = state.message
     val messageText = if (message != null) stringResource(message.messageRes()) else null
 
-    // While the location manager is open it shows its own feedback, so the dashboard only reports
-    // messages that are still pending once the manager has been closed.
-    LaunchedEffect(messageText, showLocationManager) {
-        if (messageText != null && !showLocationManager) {
+    // Feedback belongs to the screen that is visible: the caller only passes a message when the
+    // dashboard is on top, so a message shown by the location manager never appears twice.
+    LaunchedEffect(messageText) {
+        if (messageText != null) {
             snackbarHostState.showSnackbar(messageText)
             onMessageShown()
         }
@@ -100,36 +97,32 @@ fun DashboardScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
-                            Text(
-                                text = weather.location?.name ?: stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            val subtitle = weather.location?.subtitle.orEmpty()
-                            if (subtitle.isNotEmpty()) {
-                                Text(
-                                    text = subtitle,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     },
                     actions = {
-                        IconButton(onClick = onRefresh) {
+                        // Explicit 48 dp boxes: the icon itself stays 24 dp, but the clickable
+                        // area meets the minimum touch target on every screen density.
+                        IconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = stringResource(R.string.action_refresh),
                             )
                         }
-                        IconButton(onClick = { showLocationManager = true }) {
+                        IconButton(onClick = onOpenLocations, modifier = Modifier.size(48.dp)) {
                             Icon(
                                 imageVector = Icons.Default.Place,
                                 contentDescription = stringResource(R.string.action_locations),
+                            )
+                        }
+                        IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = stringResource(R.string.action_settings),
                             )
                         }
                     },
@@ -175,22 +168,6 @@ fun DashboardScreen(
 
         selectedEntry?.let { entry ->
             HourlyDetailSheet(entry = entry, onDismiss = { selectedEntry = null })
-        }
-
-        if (showLocationManager) {
-            LocationManagerScreen(
-                settings = state.settings,
-                search = state.search,
-                message = state.message,
-                onSelect = onSelectLocation,
-                onSetHome = onSetHomeLocation,
-                onAddFavorite = onAddFavorite,
-                onRemove = onRemoveLocation,
-                onMove = onMoveFavorite,
-                onQueryChange = onSearchQueryChange,
-                onMessageShown = onMessageShown,
-                onDismiss = { showLocationManager = false },
-            )
         }
     }
 }

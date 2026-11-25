@@ -15,8 +15,10 @@ android {
         applicationId = "com.example.weatherapp"
         minSdk = 33
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        // Semantic version: MAJOR.MINOR.PATCH. versionCode only ever increases, so an APK built
+        // here always updates an installation that was signed with the same key.
+        versionCode = 2
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

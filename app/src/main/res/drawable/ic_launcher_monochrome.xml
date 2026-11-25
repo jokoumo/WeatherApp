@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Monochrome layer for themed launcher icons: the same sun and cloud silhouette as the
+    foreground layer, in one single colour so the launcher can tint it to match its wallpaper and
+    icon theme. Geometry is identical to ic_launcher_foreground.xml, including the safe zone.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M64.29,53.58L67.25,54.8 M53.58,64.29L54.8,67.25 M38.42,64.29L37.2,67.25 M27.71,53.58L24.75,54.8 M27.71,38.42L24.75,37.2 M38.42,27.71L37.2,24.75 M53.58,27.71L54.8,24.75 M64.29,38.42L67.25,37.2"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4.9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M46,30a16,16 0 1,1 0,32a16,16 0 1,1 0,-32z"
+        android:fillColor="#FF000000" />
+    <group
+        android:scaleX="1.5"
+        android:scaleY="1.5"
+        android:translateX="24"
+        android:translateY="30">
+        <path
+            android:pathData="M12,19a6,6 0 1,1 0,12a6,6 0 1,1 0,-12z M20.5,8.5a9.5,9.5 0 1,1 0,19a9.5,9.5 0 1,1 0,-19z M31,17a7,7 0 1,1 0,14a7,7 0 1,1 0,-14z M12,25h19v6h-19z"
+            android:fillColor="#FF000000" />
+    </group>
+</vector>

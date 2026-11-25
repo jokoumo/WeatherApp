@@ -3,6 +3,7 @@ package com.example.weatherapp.testing
 import com.example.weatherapp.data.local.CachedForecast
 import com.example.weatherapp.data.local.ForecastCacheStore
 import com.example.weatherapp.data.local.SettingsStore
+import com.example.weatherapp.data.local.ThemeStore
 import com.example.weatherapp.data.remote.OpenMeteoForecastApi
 import com.example.weatherapp.data.remote.OpenMeteoGeocodingApi
 import com.example.weatherapp.data.remote.dto.CurrentDto
@@ -13,6 +14,7 @@ import com.example.weatherapp.data.remote.dto.GeocodingResponseDto
 import com.example.weatherapp.data.remote.dto.HourlyDto
 import com.example.weatherapp.domain.model.LocationSettings
 import com.example.weatherapp.domain.model.SavedLocation
+import com.example.weatherapp.domain.model.ThemeMode
 import com.example.weatherapp.domain.zoneIdOrDefault
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
@@ -229,6 +231,30 @@ class FakeForecastCacheStore : ForecastCacheStore {
     override suspend fun delete(locationId: String) {
         deleteCount++
         entries.remove(locationId)
+    }
+}
+
+/**
+ * In-memory theme store. [failSave] simulates a preferences file that cannot be written, which
+ * the appearance view model has to report instead of pretending the value is stored.
+ */
+class FakeThemeStore(
+    initial: ThemeMode = ThemeMode.SYSTEM,
+    private val failSave: Boolean = false,
+) : ThemeStore {
+
+    /** Current value, so a test can check what the next start of the app would read back. */
+    val state = MutableStateFlow(initial)
+
+    override val themeMode: Flow<ThemeMode> = state
+
+    val savedModes = mutableListOf<ThemeMode>()
+
+    override suspend fun save(mode: ThemeMode): Boolean {
+        if (failSave) return false
+        state.value = mode
+        savedModes += mode
+        return true
     }
 }
 

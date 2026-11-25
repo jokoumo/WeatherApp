@@ -2,7 +2,6 @@ package com.example.weatherapp.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -165,18 +164,16 @@ class DashboardScreenTest {
     private fun render(
         state: MainUiState,
         onRefresh: () -> Unit = {},
+        onOpenLocations: () -> Unit = {},
+        onOpenSettings: () -> Unit = {},
     ) {
         composeRule.setContent {
             WeatherAppTheme {
                 DashboardScreen(
                     state = state,
                     onRefresh = onRefresh,
-                    onSelectLocation = {},
-                    onSetHomeLocation = {},
-                    onAddFavorite = {},
-                    onRemoveLocation = {},
-                    onMoveFavorite = { _, _ -> },
-                    onSearchQueryChange = {},
+                    onOpenLocations = onOpenLocations,
+                    onOpenSettings = onOpenSettings,
                     onMessageShown = {},
                 )
             }
@@ -187,7 +184,8 @@ class DashboardScreenTest {
     fun dashboardShowsCurrentConditionsAndAllForecastSections() {
         render(stateWith())
 
-        composeRule.onAllNodesWithText(hamburg.name).assertCountEquals(2)
+        // The location name appears exactly once now: inside the current weather card.
+        composeRule.onAllNodesWithText(hamburg.name).assertCountEquals(1)
         composeRule.onNodeWithText(WeatherFormatter.fullDateTime(fetchedAt, zone)).assertExists()
         composeRule.onNodeWithText(
             context.getString(R.string.feels_like_value, WeatherFormatter.temperature(3.9)),
@@ -238,27 +236,77 @@ class DashboardScreenTest {
     @Test
     fun failedLoadShowsGermanErrorMessageAndRetryIsWired() {
         var refreshed = false
-        render(stateWith(failure = DataLoadFailure.NETWORK, withData = false)) { refreshed = true }
+        render(stateWith(failure = DataLoadFailure.NETWORK, withData = false), onRefresh = { refreshed = true })
 
         composeRule.onNodeWithText(context.getString(R.string.error_network)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.action_retry)).performClick()
         assertTrue(refreshed)
     }
 
+    /**
+     * The toolbar carries the application name and the three actions; the selected location is
+     * only shown inside the current weather card. Opening a screen from here is verified by
+     * `WeatherRootNavigationTest`, which drives the real navigation.
+     */
     @Test
-    fun toolbarOpensTheFullScreenLocationManager() {
+    fun toolbarShowsApplicationNameAndItsThreeActions() {
         render(stateWith())
 
-        composeRule.onNodeWithContentDescription(context.getString(R.string.action_locations)).performClick()
-
-        // The manager fills the screen: its own title, the saved places, and a fixed search field.
-        composeRule.onNodeWithText(context.getString(R.string.locations_screen_title)).assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.locations_title)).assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.locations_home)).assertExists()
-        composeRule.onNodeWithText(berlin.name).assertExists()
-        composeRule.onNode(hasSetTextAction()).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(context.getString(R.string.action_back_to_weather))
+        composeRule.onNodeWithText(context.getString(R.string.app_name)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_refresh))
             .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_locations))
+            .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_settings))
+            .assertIsDisplayed()
+        // No location management screen yet, and no location name in the toolbar.
+        composeRule.onNodeWithText(context.getString(R.string.locations_screen_title))
+            .assertDoesNotExist()
+        composeRule.onAllNodesWithText(hamburg.name).assertCountEquals(1)
+    }
+
+    @Test
+    fun toolbarActionsAreWiredToLocationsAndSettings() {
+        var locationsOpened = 0
+        var settingsOpened = 0
+        render(
+            state = stateWith(),
+            onOpenLocations = { locationsOpened++ },
+            onOpenSettings = { settingsOpened++ },
+        )
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_locations)).performClick()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_settings)).performClick()
+
+        assertTrue("the location action did not fire", locationsOpened == 1)
+        assertTrue("the settings action did not fire", settingsOpened == 1)
+    }
+
+    /** Every toolbar action keeps at least the 48 dp touch target, side by side on one line. */
+    @Test
+    fun toolbarActionsKeepReachableTouchTargetsOnOneLine() {
+        render(stateWith())
+
+        val labels = listOf(
+            context.getString(R.string.action_refresh),
+            context.getString(R.string.action_locations),
+            context.getString(R.string.action_settings),
+        )
+        val density = context.resources.displayMetrics.density
+        val minimumTouchTarget = 48f * density
+        val nodes = labels.map { label ->
+            composeRule.onNodeWithContentDescription(label).fetchSemanticsNode()
+        }
+        nodes.forEach { node ->
+            val bounds = node.boundsInWindow
+            assertTrue("touch target ${bounds.height} dp", bounds.height >= minimumTouchTarget)
+            assertTrue("touch target ${bounds.width} dp", bounds.width >= minimumTouchTarget)
+        }
+        // Same row, no overlap: the icons sit next to each other instead of stacking.
+        val tops = nodes.map { it.boundsInWindow.top }
+        assertTrue("toolbar icons are not aligned on one row", tops.distinct().size == 1)
+        val lefts = nodes.map { it.boundsInWindow.left }.sorted()
+        assertTrue("toolbar icons overlap", lefts[0] < lefts[1] && lefts[1] < lefts[2])
     }
 
     /**

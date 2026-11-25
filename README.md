@@ -1,9 +1,13 @@
-# Weather App (Wetter)
+# WetterPlus
 
 Native Android weather application written in Kotlin and Jetpack Compose. It shows live
 weather data from [Open-Meteo](https://open-meteo.com/) for a configurable home location and
 any number of favourite locations, caches responses locally, and works offline as long as a
 cached forecast exists.
+
+The application is named **WetterPlus** everywhere the user sees it — launcher label, system
+application info and the dashboard toolbar — while the application ID and package name stay
+`com.example.weatherapp`, so an installed build updates in place instead of installing beside it.
 
 All user-visible text is German; source code, comments and this documentation are English.
 
@@ -15,10 +19,13 @@ All user-visible text is German; source code, comments and this documentation ar
 | Hourly (rolling) | Horizontal strip with a rolling 24-hour window: it starts at the hourly interval that **contains** the current time, highlights it, labels every day the window touches ("Heute", "Morgen", weekday) and moves on its own when the hour changes. If that current hour is missing from the response, the earliest later hour starts the window; an already elapsed hour is never used as the start, and if the payload only contains elapsed hours the strip shows the unavailable-data note instead of outdated values. The window covers the current interval plus the following 23 hourly intervals by absolute timestamp, so a gap shortens the list rather than stretching the horizon. Every chip has the same outer height and the same internal layout whether or not it carries a day label, and the precipitation probability is rendered in the same size as the clock time so that "100 %" is never cut off. Tapping an hour opens a "Stundendetails" bottom sheet with all values for that hour, including a plain-text wind warning when that hour exceeds a threshold. |
 | Days 1–2 | Two detailed cards ("Morgen", "Übermorgen") with condition, precipitation probability/amount, wind, gusts, sunshine and day length. |
 | Days 3–15 | Compact list ("Ausblick") with weekday, date, condition icon, precipitation probability/amount and the min/max temperatures as numbers; up to the 16-day forecast horizon of the API. The written condition label and the temperature range bar were removed from these rows: the icon, the numbers and the wind marker carry the same information in less space, and the full wording stays in the detailed cards and in the accessibility label of the icon. |
-| Locations | A home location plus favourites, managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the saved locations live in a list that scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. A circular floating button in the bottom-left corner (above the navigation bar, hidden while the keyboard is open) returns to the dashboard; the system back button first closes the suggestions. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. Home is a single slot: promoting a favourite to home swaps the two entries, the previous home moving into the favourites at exactly the position the new home had, and the new home becomes the displayed location; no saved place is ever dropped and none appears twice. The last displayed location is restored on the next start. |
+| Locations | A home location plus favourites, managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the saved locations live in a list that scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. The screen is entered and left through the **back arrow in its header** ("← Orte verwalten"), like every other secondary screen; the system back button first closes the suggestions. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. Home is a single slot: promoting a favourite to home swaps the two entries, the previous home moving into the favourites at exactly the position the new home had, and the new home becomes the displayed location; no saved place is ever dropped and none appears twice. The last displayed location is restored on the next start. |
 | Refresh | Pull-to-refresh, toolbar refresh button (both bypass the cache), automatic refresh when the app returns to the foreground, and a silent background refresh when the cached response belongs to a previous calendar day in the location's time zone. The hourly window itself advances every hour without any network request. |
 | Offline | The last response per location is cached; with no network the cached data is shown instead of an empty screen. |
-| Appearance | Material 3, light and dark theme following the system setting, rounded cards, condition-dependent gradient header, custom vector weather icons, German date/number formatting, 24-hour time. |
+| Appearance | Material 3, rounded cards, condition-dependent gradient header, custom vector weather icons, German date/number formatting, 24-hour time. The theme is a user choice on its own screen: **Systemeinstellung / Hell / Dunkel**, applied immediately, stored, and restored on the next start (see [Appearance and theme](#appearance-and-theme)). |
+| Navigation | One hierarchy for every secondary screen: dashboard → location management, dashboard → settings → appearance, dashboard → settings → information → licence detail. Each secondary screen carries a back arrow in its header, the system back button follows the same path, and the dashboard keeps its state (scroll position, loaded forecast) while a secondary screen is open. |
+| Settings and information | A settings screen with two entries ("Darstellung", "Infos"), the appearance page described above, and an information page with the installed version and build number, the weather services behind the data with their links, and the licences of the data and of the shipped libraries — readable offline, with the full licence text opening in the browser. |
+| Launcher icon | A custom adaptive icon (warm sun with a soft cloud over it on a deep blue field) with a monochrome layer for themed icons; no template artwork and no bitmaps, so it renders from the same vector on every density. |
 
 ## Data source
 
@@ -190,15 +197,41 @@ reachable from the production navigation.
   review artefact of the debug build and are not part of the repository.
 
 
+## Branding and launcher icon
+
+The name the user sees is `R.string.app_name` = **WetterPlus**. The same resource backs the
+launcher label and therefore the system application info; the dashboard toolbar shows it as a
+permanent title. The application ID (`com.example.weatherapp`) and the package directories are
+deliberately unchanged, so installing a build over an existing one updates it in place.
+
+The launcher icon is a **adaptive icon** in `res/mipmap-anydpi/ic_launcher.xml` and
+`ic_launcher_round.xml`, built from three vectors and no bitmaps (minSdk 33 always takes the
+adaptive path, so the density-specific template PNGs were removed):
+
+| Layer | File | Content |
+| --- | --- | --- |
+| Background | `drawable/ic_launcher_background.xml` | flat `#17456A`, the dark blue of the light theme's primary container |
+| Foreground | `drawable/ic_launcher_foreground.xml` | sun disc `#F5BE45` with an accent disc `#F2A93B` one step lower, eight round-capped rays, and the cloud family's silhouette `#93AEC7` with its offset shadow `#6E8FAE` in front of the lower right of the sun |
+| Monochrome | `drawable/ic_launcher_monochrome.xml` | the same sun and cloud as a single-colour silhouette for themed icons |
+
+The artwork reuses the palette and the cloud path of the [weather icon family](#weather-icon-design-system),
+scaled by a `<group>` transform onto the 108 × 108 dp adaptive canvas; everything stays inside the
+66 × 66 dp safe zone (x/y 21…87), so no mask cuts a ray or the cloud. There is no text, no
+gradient and no shadow blur, and the in-app weather symbols are untouched by this layer — the
+launcher icon and the condition icons are separate assets by design.
+
 ## Architecture
 
 MVVM with unidirectional state flow. A small manual container (`di/AppContainer`, owned by
 `WeatherApplication`) provides the singletons; no DI framework is used.
 
 ```
-Composable screens (WeatherRoot, DashboardScreen, LocationManagerScreen, LocationSetupScreen)
+Composable screens (WeatherRoot + AppBackStack: DashboardScreen, LocationManagerScreen,
+                     SettingsScreen, AppearanceScreen, AboutScreen, LicenceDetailScreen,
+                     LocationSetupScreen)
         ▲  MainUiState (StateFlow)                      ▼ user events
    ui/MainViewModel  ── combines settings + weather flows, owns refresh scheduling
+   ui/settings/AppearanceViewModel ── theme mode state, applies and stores the choice
         ▲                                                    ▼
    domain/  WeatherFormatter, ForecastSections, CachePolicy, WeatherCondition, model/*
         ▲
@@ -252,10 +285,72 @@ Key decisions:
   newer selection. Request and persistence work runs on `Dispatchers.IO`.
 - **Theme.** Static Material 3 palettes (no dynamic colour) so the gradient headers keep a
   guaranteed contrast ratio on every device. Card and sheet containers use explicit surface
-  colours because the M3 elevation tint would otherwise tint the surfaces.
+  colours because the M3 elevation tint would otherwise tint the surfaces. Which palette is used
+  is a user preference (`ThemeMode`), not only the system setting — see
+  [Appearance and theme](#appearance-and-theme).
+- **Navigation without a navigation library.** `ui/navigation/AppBackStack` is a small immutable
+  list of destinations held in `rememberSaveable` with its own `Saver`; a single `BackHandler`
+  feeds the system back button into it. That is enough for a five-screen hierarchy, avoids a new
+  dependency, and keeps the whole path restorable after rotation or a theme switch.
 - **AGP 9.5.2 with built-in Kotlin.** The Kotlin plugin is not applied; the embedded Kotlin
   2.2.10 stdlib is force-pinned in `build.gradle.kts`, and dependency versions must stay
   compatible with it.
+
+## Navigation and screens
+
+`WeatherRoot` owns the whole screen stack. One destination is on top at a time, and the
+hierarchy is the same for the arrow in the header and for the system back gesture:
+
+```
+Dashboard (toolbar: WetterPlus · Aktualisieren · Orte · Einstellungen)
+├── Orte verwalten
+└── Einstellungen
+    ├── Darstellung
+    └── Infos
+        └── Lizenzdetail (for one licence entry)
+```
+
+- Every secondary screen is built from `ui/components/SecondaryScreen.kt`: a header with a
+  back arrow (`contentDescription` "Zurück") to the **start** of the title, then a scrolling
+  content column. The arrow is a 48 dp `IconButton`, so the touch target is met without a
+  floating button anywhere in the app.
+- The dashboard stays composed underneath a secondary screen. Its scroll position, its loaded
+  forecast and its hourly window are therefore intact when the user comes back, and no request
+  is sent when opening or closing a settings page. While it is covered it is marked
+  `hideFromAccessibility()` and its root swallows taps, so the hidden layer can neither be
+  reached by TalkBack nor receive a touch that belongs to the screen on top.
+- The location manager keeps its own inner back order: the first back press closes the search
+  suggestions, the second leaves the screen.
+- The toolbar title is the application name, not the location; the location stays visible in
+  the current-weather card, which is the only place it is needed.
+
+## Appearance and theme
+
+`domain/model/ThemeMode` is `SYSTEM`, `LIGHT` or `DARK`; the default is `SYSTEM`. The choice is
+stored in the same DataStore file as the locations, under the key `theme_mode`, by
+`data/local/ThemeStore` (`DataStoreThemeStore`). A missing, damaged or unknown stored value
+decodes to `SYSTEM` rather than failing.
+
+- `ui/settings/AppearanceViewModel` is created by `AppContainer` while the application starts, so
+  the stored mode is already in state before the first frame; `MainActivity` reads it for the
+  very first composition, which avoids showing the system scheme for a moment before the pinned
+  light or dark scheme takes over.
+- Selecting a mode applies it immediately — no restart, no activity recreation — and writes it to
+  disk. If the write fails, the mode stays applied for the session and the appearance screen says
+  so instead of pretending it was saved.
+- `MainActivity` also updates `isAppearanceLightStatusBars` / `isAppearanceNavigationBars`
+  whenever the effective dark/light decision changes, so the system bars stay readable when the
+  app pins a scheme that differs from the system setting.
+- The theme changes nothing else: it never touches the saved locations and never reloads the
+  weather (asserted by `AppearanceViewModelTest`).
+
+## Versioning
+
+`app/build.gradle.kts` carries the version: `versionName = "1.0.0"` in `MAJOR.MINOR.PATCH` form
+and a positive `versionCode` that only ever increases (currently 2, because the first published
+build of this repository was 1). The About screen does not repeat those numbers: it reads
+`PackageInfo.versionName` and `longVersionCode` from the installed package, so the displayed
+values cannot drift away from the build that is actually running.
 
 ## Build and run
 
@@ -269,9 +364,9 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 ```powershell
 .\gradlew.bat assembleDebug          # debug APK
-.\gradlew.bat testDebugUnitTest      # unit tests (195)
+.\gradlew.bat testDebugUnitTest      # unit tests (229)
 .\gradlew.bat lintDebug              # Android lint
-.\gradlew.bat connectedDebugAndroidTest   # 33 instrumented + Compose UI tests on a running device
+.\gradlew.bat connectedDebugAndroidTest   # 74 instrumented + Compose UI tests on a running device
 .\gradlew.bat installDebug           # install on the connected device/emulator
 ```
 
@@ -339,6 +434,27 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   dark backgrounds, the **header wind palette staying readable on every header gradient** (neutral
   at 3:1 or better, storm red distinguishable, neutral lighter than the gradient and storm red
   actually red), and no warning having no colour).
+- **Theme, navigation and information content** (31 tests):
+  `ThemeModeTest` (8) — the default is `SYSTEM`, every stored name round-trips, an unknown, blank
+  or malformed value falls back to `SYSTEM`, matching is trimmed and case-insensitive, the stored
+  form is the enum name, `SYSTEM` follows the system while `LIGHT` and `DARK` ignore it, and the
+  DataStore decoder is checked directly;
+  `AppearanceViewModelTest` (7) — `SYSTEM` on a fresh store, a stored mode is restored on start,
+  a selection is applied **before** the write finishes and then stored, every option is stored as
+  itself, a failing write keeps the choice and reports it, the warning is cleared by the next
+  selection, and a theme change never writes the location settings nor triggers a forecast request
+  (both stores wired to a real `MainViewModel`);
+  `AppBackStackTest` (10) — the dashboard is the root and offers no back action, dashboard ↔
+  location management, dashboard ↔ settings, settings ↔ appearance, settings ↔ about, licence
+  detail returns to about and not to settings, popping the dashboard is a no-op that can never
+  empty the stack, the stack round-trips through its stored names, and unknown or truncated stored
+  names come back as the dashboard instead of crashing;
+  `AboutContentTest` (6) — licence ids are unique and resolvable, every entry carries resource
+  backed text (nothing hard-coded), every link is an https URL with a host or deliberately empty,
+  the forecast API, the geocoding API and the GeoNames database are named together with the data
+  licences, the Apache component list mirrors the shipped artifacts and excludes protobuf, and the
+  BSD-licensed protobuf runtime inside DataStore plus the project's own artwork are listed
+  separately.
 - **Instrumented tests** (`app/src/androidTest`): Room cache store round-trip, replace,
   delete (in-memory database); Compose UI tests for the rendered dashboard, the hourly strip
   starting at the current hour with its day label, the hourly detail sheet, the "no usable
@@ -360,6 +476,34 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   `LocationRepository`** (with an in-memory `SettingsStore`) through the UI promotes a favourite
   to home, puts the previous home back into the favourites at the slot the new home left, keeps
   every place on screen exactly once and stores the new home as the selected location.
+- **Navigation through the real root composable** (`WeatherRootNavigationTest`, 12 tests): the
+  dashboard toolbar carries the application name; settings, location management, appearance, about
+  and a licence detail each open as their own screen and return to the right parent through the
+  header arrow; the licence detail returns to about and not to settings; the location manager has
+  **exactly one** back arrow, so the floating button is gone; the **system back button** walks the
+  same hierarchy (appearance → settings → dashboard, and licence → about → settings → dashboard);
+  and opening settings, appearance and the location manager and coming back sends **no** forecast
+  request, writes the location settings **no** extra time, and keeps the selected location and the
+  favourites untouched.
+- **Appearance page** (`AppearanceScreenTest`, 8 tests): the shared header with the back arrow, all
+  three options offered, exactly the selected mode marked (and only one), `SYSTEM` marked when
+  nothing was chosen, tapping a row reports exactly that mode, a failed write is reported on the
+  page and no warning appears otherwise, and the stored mode — not the system setting — decides the
+  colour scheme: a pinned light scheme equals a light system and differs from a pinned dark one.
+- **Information page** (`AboutScreenTest`, 7 tests): the installed package really is labelled
+  **WetterPlus** (the launcher label and the string resource agree), the version and the build
+  number on screen are read from `PackageInfo` rather than written into the layout, the weather
+  source section and the licence section are present, the model wording states that the model
+  depends on the location and names `best_match`, every licence row is listed and opens its own
+  page, and a licence page carries author, licence identifier, summary and the offline note without
+  a network — the library page additionally lists the components it covers.
+- **Theme preference against a real DataStore file** (`ThemeStoreTest`, 5 tests): `SYSTEM` for a
+  fresh file, the chosen mode written to the preferences and read back by a store created
+  afterwards, every mode stored as itself, a hand-written invalid value falling back to `SYSTEM`,
+  and a theme write leaving the saved locations in the same file identical.
+- **Toolbar and header touch targets**: the three dashboard actions and the header back arrow are
+  measured in the semantics tree and must be at least 48 dp on both axes, aligned on one row and
+  without overlapping.
 - **Presentation layout and icon family tests** (`WeatherPresentationUiTest`, 12 tests):
   every detail label of the hero card is displayed and stays inside the card bounds, and the
   first detail column never reaches into the second one; three hourly chips that cross midnight
@@ -595,7 +739,74 @@ Not verified in this iteration: TalkBack reading the new wind glyph labels, a li
 hail or strong-wind day on the device (the gallery covers those states, the dashboard did not
 show them), font scales ≥ 1.5, tablets and physical devices.
 
+### WetterPlus branding, navigation, appearance and information pages (current iteration)
+
+Same emulator (`Medium_Phone_API_37.0`, API 37, 1080×2400), real API traffic, screenshots
+`app/build/verify/n01…n15*.png`. The app data was cleared first, so this run also covers a first
+start.
+
+- **Launcher icon and name** (`n13_launcher_drawer.png`): the app drawer shows the new adaptive
+  icon — deep blue field, warm sun with its rays, soft blue cloud in front of its lower right —
+  masked as a clean circle with nothing cut off, and the label reads **WetterPlus**. Tapping it
+  starts the app. The template robot and the density bitmaps are gone.
+- **First start** (`n01_first_start.png`): the setup screen renders with the weather symbol; no
+  crash, no blank frame.
+- **Dashboard, light** (`n02_dashboard_light.png`): the toolbar title is **WetterPlus** with the
+  three actions (refresh, place, gear) on one line; the location "Hamburg / Freie und Hansestadt
+  Hamburg" is still shown inside the current-weather card, and no status strip appears below
+  "Zuletzt aktualisiert".
+- **Settings** (`n03_settings_light.png`): "← Einstellungen" with two rows — "Darstellung / Hell,
+  Dunkel oder Systemeinstellung" and "Infos / Version, Wetterdaten und Lizenzen" — each with an
+  icon and a chevron; nothing expands in place.
+- **Appearance** (`n04_appearance_light.png`, `n05_appearance_dark_pinned.png`): the three options
+  with their explanations; tapping **Dunkel** turns the whole app dark in the same frame while the
+  system stays light, and the status bar icons stay light on the dark background.
+- **Theme follows the system again** (`n14_appearance_system_light.png`,
+  `n15_appearance_system_dark.png`): after choosing **Systemeinstellung**, `cmd uimode night no`
+  and `night yes` move the app between light and dark.
+- **Persistence across a restart** (`n12_restart_persisted_dark.png`): with the system in light
+  mode and the app pinned to dark, force-stop and a cold start come up dark — the stored mode is
+  read before the first frame is drawn.
+- **Information page** (`n06_about_dark_top.png`, `n07_about_licences.png`): "Anwendung" shows
+  **WetterPlus**, Version **1.0.0** and Build **2** — the values of the installed package; the
+  source cards name the forecast API, the geocoding API, the model selection ("Welches Modell
+  tatsächlich liefert, hängt vom Ort ab") and the GeoNames database, followed by the
+  "Wetterdaten von Open-Meteo.com" link and the licence list.
+- **Licence detail** (`n08_licence_detail.png`): "← Wetterdaten von Open-Meteo" with
+  "Lizenz: CC BY 4.0", "Urheber: Open-Meteo.com", the German summary, the offline note and the
+  "Im Browser öffnen" button.
+- **Location manager** (`n09_locations_dark.png`, `n10_locations_suggestions.png`): the header
+  arrow replaces the floating button — `uiautomator` reports **exactly one** "Zurück" node, at
+  the top left — the search field stays fixed, the live suggestions still float over the list,
+  and the bottom of the list is no longer padded for an overlay.
+- **Back hierarchy, checked by reading the header title after each arrow press**: licence detail
+  → "Infos" → "Einstellungen" → dashboard. System back was used for the same path in the
+  instrumented test.
+- **Back order inside the location manager** (unchanged behaviour): first press closes the
+  keyboard, second closes the suggestions (the manager and its title stay), third returns to the
+  dashboard, which still shows the same location and data.
+- Logcat for the whole session: empty crash buffer, no `FATAL EXCEPTION`, no warning or error
+  logged by the application process.
+
+Not verified in this iteration: TalkBack behaviour of the new screens (the dashboard is marked
+hidden from accessibility while covered, but no screen reader was run), the themed-icon
+(monochrome) rendering on a launcher that enables it, tablets and physical devices, and font
+scales ≥ 1.5 on the new settings pages.
+
 ## Known limitations
+
+- **Theme:** a cold start with a pinned light/dark choice can show one frame in the system scheme
+  before the stored mode is applied, because the stored value is read asynchronously from DataStore.
+  The application-scoped `AppearanceViewModel` and its eager creation keep that window as small as
+  practical; it is not eliminated.
+- **Licences:** the About screen carries the attribution, the licence identifier, the author and a
+  German summary of every entry offline. The *full* licence text is opened in the browser, so on a
+  device without a network the user reads the summary rather than the complete legal text. Test-only
+  dependencies (JUnit, androidx.test, Espresso) are not listed in the app, because they are not
+  shipped in the APK.
+- **Attribution placement:** Open-Meteo asks for "Weather data by Open-Meteo.com" with a link where
+  weather data is displayed. The app places that notice with a link on the information page rather
+  than on every card of the dashboard, which keeps the forecast layout unchanged.
 
 - The app has no coarse/fine location permission: the home location is chosen by search
   (which is the configurable behaviour required by the product spec).
@@ -609,10 +820,11 @@ show them), font scales ≥ 1.5, tablets and physical devices.
   fill the strip. A payload whose hours have all already elapsed yields no window at all, so
   the dashboard shows "Für den aktuellen Zeitraum sind keine Stundendaten verfügbar." instead
   of outdated hours. Scrolling further ahead than one day is not possible.
-- The location manager is a full screen overlay inside `DashboardScreen` rather than a
-  navigation destination, so its open/closed flag and the list's scroll position are not
-  restored after a configuration change (theme switch or rotation closes it). The saved
-  locations, the selection and the pending search are held by the ViewModel and survive.
+- The screen the user is on survives a configuration change — `AppBackStack` is `rememberSaveable`
+  — but a scroll position does not: the dashboard column and the favourite list keep their state in
+  a plain `rememberScrollState` / `LazyColumn` state, which is not saved, so a rotation or a theme
+  switch returns those lists to the top. The saved locations, the selection and the pending search
+  are held by the ViewModel and DataStore and survive.
 - The suggestion dropdown is a custom anchored `Surface` instead of `ExposedDropdownMenu`,
   which is what allows the fixed height cap, the independent scrolling and the keyboard-aware
   placement; the trade-off is that it is not announced as a menu by accessibility services.
