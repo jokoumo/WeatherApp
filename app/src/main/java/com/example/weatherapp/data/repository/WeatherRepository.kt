@@ -59,6 +59,15 @@ class WeatherRepository(
     }
 
     /**
+     * Drops the cached forecast of [locationId]. Used when a location is deleted: without this
+     * call the row of a location nobody uses any more would stay in the database indefinitely.
+     */
+    suspend fun dropCache(locationId: String) {
+        runCatching { cacheStore.delete(locationId) }
+            .onFailure { Log.w(TAG, "Removing forecast cache failed", it) }
+    }
+
+    /**
      * Returns forecast data for [location].
      *
      * A cached snapshot is served without a network call only while it is fresh: within the TTL,

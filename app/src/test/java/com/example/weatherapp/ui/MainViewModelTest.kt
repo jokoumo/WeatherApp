@@ -401,6 +401,28 @@ class MainViewModelTest {
         assertNotNull(viewModel.uiState.value.weather.current)
     }
 
+    /**
+     * A location the user deleted must not leave its forecast behind: the cache row is keyed by
+     * location id and could never be read again.
+     */
+    @Test
+    fun `removing a location also drops its cached forecast`() = withViewModel {
+        advanceUntilIdle()
+        viewModel.addFavorite(berlin)
+        advanceUntilIdle()
+        viewModel.selectLocation(berlin.id)
+        advanceUntilIdle()
+        assertTrue(cache.entries.containsKey(berlin.id))
+
+        val deletesBefore = cache.deleteCount
+        viewModel.removeLocation(berlin.id)
+        advanceUntilIdle()
+
+        assertEquals(deletesBefore + 1, cache.deleteCount)
+        assertFalse("the deleted location still holds a forecast", cache.entries.containsKey(berlin.id))
+        assertTrue("the remaining location keeps its forecast", cache.entries.containsKey(hamburg.id))
+    }
+
     @Test
     fun `today extremes are derived from today hourly values`() = withViewModel {
         advanceUntilIdle()

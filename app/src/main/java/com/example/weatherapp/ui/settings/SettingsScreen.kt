@@ -74,7 +74,7 @@ fun SettingsScreen(
 
 /** Full width settings row: icon, label, short description and a chevron. */
 @Composable
-private fun SettingsNavigationRow(
+fun SettingsNavigationRow(
     icon: @Composable () -> Unit,
     title: String,
     summary: String,

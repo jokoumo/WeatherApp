@@ -68,6 +68,24 @@ class AppBackStackTest {
         assertEquals(AppDestination.ABOUT, detail.pop().current)
     }
 
+    /** The privacy page hangs below the information page, exactly like the licence detail. */
+    @Test
+    fun privacyPageReturnsToAboutAndNotToSettings() {
+        val privacy = AppBackStack.atDashboard()
+            .push(AppDestination.SETTINGS)
+            .push(AppDestination.ABOUT)
+            .push(AppDestination.PRIVACY)
+
+        assertEquals(AppDestination.PRIVACY, privacy.current)
+        assertEquals(AppDestination.ABOUT, privacy.pop().current)
+        assertEquals(AppDestination.SETTINGS, privacy.pop().pop().current)
+        assertEquals(
+            listOf("DASHBOARD", "SETTINGS", "ABOUT", "PRIVACY"),
+            privacy.toStoredNames(),
+        )
+        assertEquals(privacy, AppBackStack.fromStoredNames(privacy.toStoredNames()))
+    }
+
     /** Popping on the dashboard is a no-op, so back can never leave the application by accident. */
     @Test
     fun poppingTheDashboardKeepsItAndNeverEmptiesTheStack() {

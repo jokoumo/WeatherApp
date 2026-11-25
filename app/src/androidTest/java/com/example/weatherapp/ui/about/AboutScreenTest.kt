@@ -27,10 +27,14 @@ class AboutScreenTest {
 
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private fun renderAbout(onOpenLicence: (String) -> Unit = {}) {
+    private fun renderAbout(onOpenLicence: (String) -> Unit = {}, onOpenPrivacy: () -> Unit = {}) {
         composeRule.setContent {
             WeatherAppTheme {
-                AboutScreen(onBack = {}, onOpenLicence = onOpenLicence)
+                AboutScreen(
+                    onBack = {},
+                    onOpenLicence = onOpenLicence,
+                    onOpenPrivacy = onOpenPrivacy,
+                )
             }
         }
         composeRule.waitForIdle()
@@ -110,6 +114,24 @@ class AboutScreenTest {
         composeRule.waitForIdle()
 
         assertEquals(listOf("open-meteo-data"), opened)
+    }
+
+    /** The privacy page is entered from here, so the entry has to be present and clickable. */
+    @Test
+    fun privacyEntryIsPresentAndOpensThePrivacyPage() {
+        var opened = 0
+        renderAbout(onOpenPrivacy = { opened++ })
+
+        val section = composeRule.onNodeWithText(context.getString(R.string.about_section_privacy))
+        section.assertExists()
+
+        val entry = composeRule.onNodeWithText(context.getString(R.string.about_privacy_title))
+        entry.performScrollTo()
+        composeRule.waitForIdle()
+        entry.performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(1, opened)
     }
 
     /**

@@ -20,6 +20,7 @@ import com.example.weatherapp.domain.millisUntilNextHour
 import com.example.weatherapp.ui.about.AboutContent
 import com.example.weatherapp.ui.about.AboutScreen
 import com.example.weatherapp.ui.about.LicenceDetailScreen
+import com.example.weatherapp.ui.about.PrivacyScreen
 import com.example.weatherapp.ui.dashboard.DashboardScreen
 import com.example.weatherapp.ui.locations.LocationManagerScreen
 import com.example.weatherapp.ui.locations.LocationSetupScreen
@@ -138,7 +139,10 @@ fun WeatherRoot(
                         licenceId = id
                         open(AppDestination.LICENSE)
                     },
+                    onOpenPrivacy = { open(AppDestination.PRIVACY) },
                 )
+
+                AppDestination.PRIVACY -> PrivacyScreen(onBack = goBack)
 
                 AppDestination.LICENSE -> LicenceDetailScreen(
                     entry = AboutContent.licenceById(licenceId) ?: AboutContent.licences.first(),

@@ -6,7 +6,7 @@ import androidx.compose.runtime.saveable.Saver
  * Every full screen the application can show.
  *
  * The dashboard is the root; location management and settings hang directly below it, and
- * appearance, about and a licence detail are sub-pages of settings.
+ * appearance, about, a licence detail and the privacy page are sub-pages further down that tree.
  */
 enum class AppDestination {
     DASHBOARD,
@@ -15,6 +15,9 @@ enum class AppDestination {
     APPEARANCE,
     ABOUT,
     LICENSE,
+
+    /** Privacy information, opened from the information page. */
+    PRIVACY,
 }
 
 /**

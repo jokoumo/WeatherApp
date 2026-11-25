@@ -103,7 +103,12 @@ class AppContainer(private val context: Context) {
         }
     }
 
-    private companion object {
+    /**
+     * Names of the two storage files. They are visible inside the module because the backup rules
+     * have to name exactly these files: the test for the backup configuration compares the rules
+     * with the paths the application really writes.
+     */
+    internal companion object {
         const val DATABASE_NAME = "weather-cache"
         const val PREFERENCES_NAME = "weather-settings"
     }

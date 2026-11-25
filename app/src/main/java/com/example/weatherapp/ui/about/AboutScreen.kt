@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,12 +26,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.weatherapp.R
 import com.example.weatherapp.ui.components.DetailRow
 import com.example.weatherapp.ui.components.InfoNote
 import com.example.weatherapp.ui.components.SecondaryScreenScaffold
+import com.example.weatherapp.ui.settings.SettingsNavigationRow
 import com.example.weatherapp.ui.settings.SettingsSectionHeader
 
 /**
@@ -54,6 +58,7 @@ internal fun openExternalLink(url: String, uriHandler: UriHandler) {
 fun AboutScreen(
     onBack: () -> Unit,
     onOpenLicence: (String) -> Unit,
+    onOpenPrivacy: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -102,6 +107,21 @@ fun AboutScreen(
                 onOpen = { onOpenLicence(entry.id) },
             )
         }
+
+        SettingsSectionHeader(stringResource(R.string.about_section_privacy))
+        SettingsNavigationRow(
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_privacy),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+            },
+            title = stringResource(R.string.about_privacy_title),
+            summary = stringResource(R.string.about_privacy_summary),
+            onClick = onOpenPrivacy,
+        )
     }
 }
 

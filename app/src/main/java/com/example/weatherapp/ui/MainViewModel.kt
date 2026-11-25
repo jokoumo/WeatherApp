@@ -236,7 +236,12 @@ class MainViewModel(
     }
 
     fun removeLocation(locationId: String) {
-        viewModelScope.launch { locationRepository.removeLocation(locationId) }
+        viewModelScope.launch {
+            locationRepository.removeLocation(locationId)
+            // The forecast cache is keyed by location id. After the location is gone its entry can
+            // never be read again, so it is dropped instead of staying in the database forever.
+            weatherRepository.dropCache(locationId)
+        }
     }
 
     fun moveFavorite(locationId: String, delta: Int) {

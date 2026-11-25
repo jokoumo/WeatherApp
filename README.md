@@ -23,8 +23,9 @@ All user-visible text is German; source code, comments and this documentation ar
 | Refresh | Pull-to-refresh, toolbar refresh button (both bypass the cache), automatic refresh when the app returns to the foreground, and a silent background refresh when the cached response belongs to a previous calendar day in the location's time zone. The hourly window itself advances every hour without any network request. |
 | Offline | The last response per location is cached; with no network the cached data is shown instead of an empty screen. |
 | Appearance | Material 3, rounded cards, condition-dependent gradient header, custom vector weather icons, German date/number formatting, 24-hour time. The theme is a user choice on its own screen: **Systemeinstellung / Hell / Dunkel**, applied immediately, stored, and restored on the next start (see [Appearance and theme](#appearance-and-theme)). |
-| Navigation | One hierarchy for every secondary screen: dashboard → location management, dashboard → settings → appearance, dashboard → settings → information → licence detail. Each secondary screen carries a back arrow in its header, the system back button follows the same path, and the dashboard keeps its state (scroll position, loaded forecast) while a secondary screen is open. |
+| Navigation | One hierarchy for every secondary screen: dashboard → location management, dashboard → settings → appearance, dashboard → settings → information → licence detail, dashboard → settings → information → privacy. Each secondary screen carries a back arrow in its header, the system back button follows the same path, and the dashboard keeps its state (scroll position, loaded forecast) while a secondary screen is open. |
 | Settings and information | A settings screen with two entries ("Darstellung", "Infos"), the appearance page described above, and an information page with the installed version and build number, the weather services behind the data with their links, and the licences of the data and of the shipped libraries — readable offline, with the full licence text opening in the browser. |
+| Privacy and backup | A dedicated **Datenschutz** screen (settings → information → privacy) describing what the app stores, what it sends to the weather service and how backups are handled, with a link to the weather service's own terms and privacy notice. Home location, favourites, ordering, selected location and appearance are eligible for the Android backup; the forecast cache and its database side files are excluded because they can be fetched again (see [Privacy, local storage and backup](#privacy-local-storage-and-backup)). |
 | Launcher icon | A custom adaptive icon (warm sun with a soft cloud over it on a deep blue field) with a monochrome layer for themed icons; no template artwork and no bitmaps, so it renders from the same vector on every density. |
 
 ## Data source
@@ -228,7 +229,7 @@ MVVM with unidirectional state flow. A small manual container (`di/AppContainer`
 ```
 Composable screens (WeatherRoot + AppBackStack: DashboardScreen, LocationManagerScreen,
                      SettingsScreen, AppearanceScreen, AboutScreen, LicenceDetailScreen,
-                     LocationSetupScreen)
+                     PrivacyScreen, LocationSetupScreen)
         ▲  MainUiState (StateFlow)                      ▼ user events
    ui/MainViewModel  ── combines settings + weather flows, owns refresh scheduling
    ui/settings/AppearanceViewModel ── theme mode state, applies and stores the choice
@@ -307,7 +308,8 @@ Dashboard (toolbar: WetterPlus · Aktualisieren · Orte · Einstellungen)
 └── Einstellungen
     ├── Darstellung
     └── Infos
-        └── Lizenzdetail (for one licence entry)
+        ├── Lizenzdetail (for one licence entry)
+        └── Datenschutz
 ```
 
 - Every secondary screen is built from `ui/components/SecondaryScreen.kt`: a header with a
@@ -352,6 +354,62 @@ build of this repository was 1). The About screen does not repeat those numbers:
 `PackageInfo.versionName` and `longVersionCode` from the installed package, so the displayed
 values cannot drift away from the build that is actually running.
 
+## Privacy, local storage and backup
+
+The app documents its own data handling inside the app: **Einstellungen → Infos → Datenschutz**
+opens a full screen (`ui/about/PrivacyScreen.kt`) with the same header and back behaviour as every
+other secondary screen. Its text is written from what the code really does, and the section
+headings are the ones in `strings.xml`: overview, data stored on the device, forecast requests,
+place search, cookies and tracking, storage and backup, and the weather service's own notice,
+which links to the official Open-Meteo terms and privacy page
+(<https://open-meteo.com/en/terms> — Open-Meteo publishes both on that one page).
+
+**What is stored on the device** (verified with `run-as` on a running emulator):
+
+| Path inside the app data directory | Content | Written by |
+| --- | --- | --- |
+| `files/datastore/weather-settings.preferences_pb` | home location, favourites with their order, selected location, appearance (`theme_mode`) | `SettingsStore`, `ThemeStore` (one DataStore file) |
+| `databases/weather-cache`, `weather-cache-wal`, `weather-cache-shm` | one cached forecast per location plus the time it was fetched | Room (`ForecastCache`) |
+| `cache/`, `code_cache/` | SQLite lock file, JIT caches, temporary files | the system, not the app |
+
+There is no account, no advertising or analytics library, no crash reporting, no in-app browser,
+no cookie storage and no location permission. `INTERNET` is the only permission, and the only two
+hosts ever contacted are `api.open-meteo.com` (`v1/forecast`) and
+`geocoding-api.open-meteo.com` (`v1/search`), both over HTTPS and without an API key. A forecast
+request carries the coordinates of the selected place and the requested variables; a search sends
+the entered text. As with any HTTP request, the server also sees the device's public IP address.
+OkHttp is configured with timeouts only — no interceptors, no logging.
+
+**Retention.** The cache holds one row per saved location and is replaced on the next refresh; a
+corrupt row is deleted when it is noticed, and deleting a location also drops its cached forecast
+(`MainViewModel.removeLocation` → `WeatherRepository.dropCache`). Stale entries are deliberately
+kept while a refresh runs and as the fallback when a refresh fails, which is what makes the app
+usable offline.
+
+**Backup policy** (`res/xml/backup_rules.xml` for Android 11 and lower,
+`res/xml/data_extraction_rules.xml` for Android 12 and newer, both referenced from the manifest):
+
+- Kept: everything the user created — home location, favourites and their order, the selected
+  location and the appearance choice. They are covered by the default "back up the app data
+  directory" rule, so no `<include>` is used anywhere; adding one would restrict the backup to the
+  listed paths and could silently drop saved places.
+- Excluded: the forecast cache, i.e. `domain="database" path="weather-cache"` plus its `-wal` and
+  `-shm` side files (the platform adds `-journal` on its own), and the debug-only
+  `files/icon_gallery` folder. All of it can be fetched again.
+- `cache/` and `code_cache/` are never part of an Android backup, so they need no rule.
+- Android 12 and newer read `dataExtractionRules`; the file configures `<cloud-backup>` and
+  `<device-transfer>` identically. For apps targeting Android 12 or newer, `fullBackupContent` is
+  ignored for the device-to-device transfer, which is why both files carry the same policy.
+
+What was actually verified and what was not: the rules were parsed on a device by the platform's
+own backup code (`bmgr backupnow` with `BackupXmlParserLogging` at verbose level showed
+`Found valid data-extraction-rules`, the excluded `weather-cache*` paths and
+`files/datastore/weather-settings.preferences_pb` being walked), and a full cycle was run with the
+local debug transport — back up, `pm clear`, uninstall, reinstall, first launch: the saved places
+came back and the weather was fetched again, while the cache database was not restored. Not
+verified: a real Google cloud backup and a physical device-to-device transfer, both of which need
+an account and a second device.
+
 ## Build and run
 
 Android Studio (or a JDK 17+ and an Android SDK) is required. If `java` is not on `PATH` and
@@ -364,9 +422,9 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 ```powershell
 .\gradlew.bat assembleDebug          # debug APK
-.\gradlew.bat testDebugUnitTest      # unit tests (229)
+.\gradlew.bat testDebugUnitTest      # unit tests (234)
 .\gradlew.bat lintDebug              # Android lint
-.\gradlew.bat connectedDebugAndroidTest   # 74 instrumented + Compose UI tests on a running device
+.\gradlew.bat connectedDebugAndroidTest   # 91 instrumented + Compose UI tests on a running device
 .\gradlew.bat installDebug           # install on the connected device/emulator
 ```
 
@@ -409,7 +467,9 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   disabled tint is clearly weaker yet still visible, and the three emphasis levels are
   `onSurfaceVariant`, `primary` and `error`); `MainViewModel` state transitions
   (initial load, location switch, late responses, hourly tick without extra request, silent
-  refresh after a local day change, foreground refresh, cached-while-refreshing, error states);
+  refresh after a local day change, foreground refresh, cached-while-refreshing, error states, and
+removing a location while **also dropping the cached forecast of that location** so a deleted place
+leaves no row behind);
   **precipitation intensity** (`PrecipitationStyleTest`, 12 tests: the WMO codes behind the three
   rain and three snow levels, showers sharing those levels with steady rain, drizzle, freezing
   precipitation, snow grains, thunderstorm and hail keeping their own family and no intensity,
@@ -434,7 +494,7 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   dark backgrounds, the **header wind palette staying readable on every header gradient** (neutral
   at 3:1 or better, storm red distinguishable, neutral lighter than the gradient and storm red
   actually red), and no warning having no colour).
-- **Theme, navigation and information content** (31 tests):
+- **Theme, navigation, information content and backup configuration** (35 tests):
   `ThemeModeTest` (8) — the default is `SYSTEM`, every stored name round-trips, an unknown, blank
   or malformed value falls back to `SYSTEM`, matching is trimmed and case-insensitive, the stored
   form is the enum name, `SYSTEM` follows the system while `LIGHT` and `DARK` ignore it, and the
@@ -444,9 +504,10 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   itself, a failing write keeps the choice and reports it, the warning is cleared by the next
   selection, and a theme change never writes the location settings nor triggers a forecast request
   (both stores wired to a real `MainViewModel`);
-  `AppBackStackTest` (10) — the dashboard is the root and offers no back action, dashboard ↔
+  `AppBackStackTest` (11) — the dashboard is the root and offers no back action, dashboard ↔
   location management, dashboard ↔ settings, settings ↔ appearance, settings ↔ about, licence
-  detail returns to about and not to settings, popping the dashboard is a no-op that can never
+  detail returns to about and not to settings, the **privacy page** returns to about and not to
+  settings (and its stored names round-trip), popping the dashboard is a no-op that can never
   empty the stack, the stack round-trips through its stored names, and unknown or truncated stored
   names come back as the dashboard instead of crashing;
   `AboutContentTest` (6) — licence ids are unique and resolvable, every entry carries resource
@@ -454,7 +515,11 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   the forecast API, the geocoding API and the GeoNames database are named together with the data
   licences, the Apache component list mirrors the shipped artifacts and excludes protobuf, and the
   BSD-licensed protobuf runtime inside DataStore plus the project's own artwork are listed
-  separately.
+  separately;
+  `BackupManifestTest` (3) — the manifest enables backup and references **both** rule files, no
+  cleartext traffic is permitted, and `INTERNET` is the only permission the application declares
+  (the privacy page states that the position of the device is never asked for, and the manifest has
+  to stay in line with that sentence).
 - **Instrumented tests** (`app/src/androidTest`): Room cache store round-trip, replace,
   delete (in-memory database); Compose UI tests for the rendered dashboard, the hourly strip
   starting at the current hour with its day label, the hourly detail sheet, the "no usable
@@ -476,26 +541,44 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   `LocationRepository`** (with an in-memory `SettingsStore`) through the UI promotes a favourite
   to home, puts the previous home back into the favourites at the slot the new home left, keeps
   every place on screen exactly once and stores the new home as the selected location.
-- **Navigation through the real root composable** (`WeatherRootNavigationTest`, 12 tests): the
-  dashboard toolbar carries the application name; settings, location management, appearance, about
-  and a licence detail each open as their own screen and return to the right parent through the
-  header arrow; the licence detail returns to about and not to settings; the location manager has
+- **Navigation through the real root composable** (`WeatherRootNavigationTest`, 15 tests): the
+  dashboard toolbar carries the application name; settings, location management, appearance, about,
+  a licence detail and the **privacy page** each open as their own screen and return to the right
+  parent through the header arrow; the licence detail and the privacy page return to about and not
+  to settings; the location manager has
   **exactly one** back arrow, so the floating button is gone; the **system back button** walks the
-  same hierarchy (appearance → settings → dashboard, and licence → about → settings → dashboard);
-  and opening settings, appearance and the location manager and coming back sends **no** forecast
-  request, writes the location settings **no** extra time, and keeps the selected location and the
-  favourites untouched.
+  same hierarchy (appearance → settings → dashboard, licence → about → settings → dashboard and
+  privacy → about → settings → dashboard);
+  and opening settings, appearance, the location manager or the privacy page and coming back sends
+  **no** forecast request, writes the location settings **no** extra time, and keeps the selected
+  location and the favourites untouched.
+- **Privacy page** (`PrivacyScreenTest`, 9 tests): the header shows the German title and the back
+  action, all seven topics have their own heading, the back arrow leaves the page, the link at the
+  end of a long scrolling page is reachable by scrolling, the whole notice is present without any
+  network call, the page renders in the light **and** the dark scheme, and the wording is checked
+  against the implementation: the two hosts and their endpoints are named, the visible IP address
+  and the entered search term are mentioned, cookies / advertising / analytics / telemetry are
+  denied, the stored values are listed, the provider notice links to the official Open-Meteo terms
+  and privacy page, and the backup section names the same exclusions the xml rules declare.
+- **Backup configuration against the real file names** (`BackupConfigurationTest`, 4 tests): both
+  rule resources are parsed the way the platform parses them; the legacy file excludes the cache
+  database and nothing else; the Android 12 file configures `cloud-backup` and `device-transfer`
+  identically; the excluded names are compared with `getDatabasePath(...)` of the database the
+  application actually opens (including `-wal` and `-shm`); and the DataStore file that holds the
+  saved places is computed from the same API the app uses and checked against every rule, so no
+  rule may hide it.
 - **Appearance page** (`AppearanceScreenTest`, 8 tests): the shared header with the back arrow, all
   three options offered, exactly the selected mode marked (and only one), `SYSTEM` marked when
   nothing was chosen, tapping a row reports exactly that mode, a failed write is reported on the
   page and no warning appears otherwise, and the stored mode — not the system setting — decides the
   colour scheme: a pinned light scheme equals a light system and differs from a pinned dark one.
-- **Information page** (`AboutScreenTest`, 7 tests): the installed package really is labelled
+- **Information page** (`AboutScreenTest`, 8 tests): the installed package really is labelled
   **WetterPlus** (the launcher label and the string resource agree), the version and the build
   number on screen are read from `PackageInfo` rather than written into the layout, the weather
   source section and the licence section are present, the model wording states that the model
   depends on the location and names `best_match`, every licence row is listed and opens its own
-  page, and a licence page carries author, licence identifier, summary and the offline note without
+  page, the **Datenschutz entry is present and opens the privacy page**, and a licence page carries
+  author, licence identifier, summary and the offline note without
   a network — the library page additionally lists the components it covers.
 - **Theme preference against a real DataStore file** (`ThemeStoreTest`, 5 tests): `SYSTEM` for a
   fresh file, the chosen mode written to the preferences and read back by a store created
@@ -793,6 +876,54 @@ hidden from accessibility while covered, but no screen reader was run), the them
 (monochrome) rendering on a launcher that enables it, tablets and physical devices, and font
 scales ≥ 1.5 on the new settings pages.
 
+### Privacy page, storage layout and backup rules (current iteration)
+
+Same emulator (`Medium_Phone_API_37.0`, API 37, 1080×2400), real API traffic, screenshots
+`app/build/verify/n20…n36*.png`.
+
+- **Entry** (`n21_settings.png`, `n23_about_privacy_entry.png`): the information page ends with the
+  section "Datenschutz" and the row "Datenschutz bei WetterPlus / Welche Daten die App speichert
+  und überträgt" with the shield icon and a chevron; tapping it opens a full screen, not a dialog.
+- **Privacy page, light** (`n24_privacy_top.png`, `n25_privacy_middle.png`,
+  `n26_privacy_backup.png`, `n27_privacy_bottom.png`): "← Datenschutz" at the top left, then the
+  intro and the seven sections; the stored values, the transmitted values and the two endpoints are
+  set off in cards, the backup section carries the "Vorgesehen für die Sicherung" and "Von der
+  Sicherung ausgeschlossen" cards, and the last elements are the link button
+  "Datenschutz- und Nutzungsbedingungen von Open-Meteo öffnen" and the offline note. The page
+  scrolls to its end without any element being cut off.
+- **Link** (`n28_privacy_link_browser.png`): the button opens Chrome on
+  `open-meteo.com/en/terms`; coming back returns to the app on the page it was on, and one back
+  press lands on "Infos".
+- **Dark scheme** (`n29_appearance_dark.png`, `n31_privacy_dark_top.png`,
+  `n32_privacy_dark_requests.png`): the same content on the dark surface, list marks in the primary
+  colour, cards and text still separated.
+- **Back behaviour**: arrow on the privacy page → "Infos"; arrow → "Einstellungen"; system back →
+  dashboard. The dashboard afterwards still showed Hamburg with its forecast.
+- **Storage as it really is** (`run-as com.example.weatherapp ls`):
+  `files/datastore/weather-settings.preferences_pb` (467 bytes with two saved places),
+  `databases/weather-cache`, `weather-cache-wal`, `weather-cache-shm`, plus `cache/` and
+  `code_cache/`. The database file has **no** `.db` suffix, which is what the rules name.
+- **Backup pass executed on the device**, not just reviewed: with `BackupXmlParserLogging` at
+  verbose level, `bmgr backupnow com.example.weatherapp` logged `Found valid
+  data-extraction-rules`, the excludes `databases/weather-cache`, `-wal`, `-shm` (and the
+  auto-generated `-journal` variants) and `files/icon_gallery`, and `Includes: …nothing specified
+  (This means the entirety of app data minus excludes)`. `FullBackup_native` walked
+  `files/datastore/weather-settings.preferences_pb` and measured the `databases` directory at 0
+  bytes, i.e. the cache was skipped.
+- **Restore cycle**: back up, `pm clear`, uninstall, reinstall, first launch. Android restored the
+  preferences file (same 467 bytes, original modification time), the app came up with Hamburg as
+  home and Berlin as favourite, and the weather was fetched again; the cache database was created
+  fresh rather than restored. Afterwards the emulator's backup settings were put back to what they
+  were (transport `com.google.android.gms/.backup.BackupTransportService`, backup disabled).
+- Logcat for the whole session: empty crash buffer, no `FATAL EXCEPTION`, no warning or error
+  logged by the application process.
+
+Not verified in this iteration: a real Google cloud backup and a physical device-to-device
+transfer (both need an account and a second device) — the `<device-transfer>` section was reviewed
+and parsed by the platform, but no actual phone-to-phone transfer was performed; and whether
+Open-Meteo logs anything beyond what its own terms and privacy page states, which is outside this
+application.
+
 ## Known limitations
 
 - **Theme:** a cold start with a pinned light/dark choice can show one frame in the system scheme
@@ -869,6 +1000,15 @@ scales ≥ 1.5 on the new settings pages.
   hourly detail sheet still state it in words.
 - Verified on the API 37 phone emulator only; no physical device, tablet, or low-API-level
   device testing was done.
+- Backup: the **cloud** path was exercised end to end on the emulator with the local debug
+  transport (backup, wipe, reinstall, restore). The `<device-transfer>` section is configured the
+  same way and is parsed by the platform, but no real phone-to-phone transfer was performed, and a
+  real Google cloud backup would need an account. Whether a device's backup is switched on at all
+  is a system setting this app cannot control.
+- The privacy screen describes what this application does. What the weather service does with the
+  requests it receives is quoted from Open-Meteo's own terms and privacy page and can change there
+  without any change in this repository; the screen says so. No legal assessment is made anywhere
+  in the app or in this document.
 - Lint reports only "newer version available" advisories for Gradle 9.6.0, core-ktx,
   Compose BOM, the Kotlin plugins and kotlinx-serialization. Upgrading the Kotlin plugins
   beyond 2.2.x is intentionally avoided while AGP's embedded Kotlin stdlib is pinned.

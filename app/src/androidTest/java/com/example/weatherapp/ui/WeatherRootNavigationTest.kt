@@ -327,4 +327,82 @@ class WeatherRootNavigationTest {
         assertEquals(hamburg.id, mainViewModel.uiState.value.weather.location?.id)
         assertTrue(mainViewModel.uiState.value.settings.favorites.isNotEmpty())
     }
+
+    /** The privacy page is a screen of its own, entered from the information page. */
+    private fun openPrivacyPage() {
+        openSettings()
+        composeRule.onNodeWithText(context.getString(R.string.settings_about_title)).performClick()
+        composeRule.waitForIdle()
+        val entry = composeRule.onNodeWithText(context.getString(R.string.about_privacy_title))
+        entry.performScrollTo()
+        composeRule.waitForIdle()
+        entry.performClick()
+        composeRule.waitForIdle()
+    }
+
+    @Test
+    fun aboutOpensThePrivacyPageAndItsBackArrowReturnsToAbout() {
+        renderRoot()
+
+        openPrivacyPage()
+
+        composeRule.onNodeWithText(context.getString(R.string.privacy_screen_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.privacy_intro)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.privacy_section_backup)).assertExists()
+
+        clickBackArrow()
+
+        // Back landed on the information page again, and the privacy text is gone.
+        val licencesSection = composeRule.onNodeWithText(context.getString(R.string.about_section_licenses))
+        licencesSection.performScrollTo()
+        composeRule.waitForIdle()
+        licencesSection.assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.privacy_intro)).assertDoesNotExist()
+    }
+
+    /** System back walks out of the privacy page along the same hierarchy as the arrow. */
+    @Test
+    fun systemBackLeavesThePrivacyPageStepByStep() {
+        renderRoot()
+
+        openPrivacyPage()
+        composeRule.onNodeWithText(context.getString(R.string.privacy_screen_title)).assertIsDisplayed()
+
+        pressSystemBack()
+        val licencesSection = composeRule.onNodeWithText(context.getString(R.string.about_section_licenses))
+        licencesSection.performScrollTo()
+        composeRule.waitForIdle()
+        licencesSection.assertIsDisplayed()
+
+        pressSystemBack()
+        composeRule.onNodeWithText(context.getString(R.string.settings_appearance_title)).assertIsDisplayed()
+
+        pressSystemBack()
+        dashboardTitle().assertIsDisplayed()
+    }
+
+    /** The privacy page is pure information: it must not load weather or write any setting. */
+    @Test
+    fun visitingPrivacyLeavesWeatherAndLocationsUntouched() {
+        renderRoot()
+        composeRule.waitForIdle()
+        val requestsAfterStart = forecastApi.callCount
+        val settingsWritesAfterStart = settingsStore.saveCount
+
+        openPrivacyPage()
+        composeRule.onNodeWithText(context.getString(R.string.privacy_section_provider)).performScrollTo()
+        composeRule.waitForIdle()
+        clickBackArrow()
+        composeRule.waitForIdle()
+
+        assertEquals("the privacy page triggered forecast requests", requestsAfterStart, forecastApi.callCount)
+        assertEquals(
+            "the privacy page wrote the location settings",
+            settingsWritesAfterStart,
+            settingsStore.saveCount,
+        )
+        assertEquals(hamburg.id, mainViewModel.uiState.value.settings.selectedLocationId)
+        assertEquals(hamburg.id, mainViewModel.uiState.value.weather.location?.id)
+        assertTrue(mainViewModel.uiState.value.settings.favorites.isNotEmpty())
+    }
 }

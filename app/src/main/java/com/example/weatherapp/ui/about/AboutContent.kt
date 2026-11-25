@@ -70,6 +70,13 @@ object AboutContent {
     /** Attribution link that has to sit next to displayed Open-Meteo data. */
     const val ATTRIBUTION_URL = "https://open-meteo.com/"
 
+    /**
+     * Official terms and privacy notice of the weather service. Open-Meteo publishes both on one
+     * page; there is no separate /privacy address. The privacy page of the app links here because
+     * only the operator can describe how it handles the requests it receives.
+     */
+    const val PROVIDER_PRIVACY_URL = "https://open-meteo.com/en/terms"
+
     val sources: List<SourceEntry> = listOf(
         SourceEntry(
             titleRes = R.string.about_source_forecast_title,
