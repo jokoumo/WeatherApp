@@ -1,19 +1,37 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Backup rules for Android 12 and newer (android:dataExtractionRules). Two destinations are
+    configured separately: the cloud backup of the system and the device-to-device transfer used
+    when a user moves to a new phone. The section element for the transfer is named
+    "device-transfer", which is what the platform parser looks for.
+
+    Policy, identical for both destinations:
+      - Keep what the user created: home location, favourites with their order, the selected
+        location and the appearance choice. They live in
+        files/datastore/weather-settings.preferences_pb and are covered by the default rule "back
+        up the app data directory", so they are deliberately not listed here.
+      - Leave out what can be reconstructed: the Room forecast cache (databases/weather-cache and
+        its -wal, -shm and -journal side files) only holds copies of answers the weather service
+        sends again on request, including their timestamps.
+      - cache/ and code_cache/ (SQLite lock file, JIT caches, temporary files) are never part of an
+        Android backup anyway, so they need no rule. The review images the instrumented gallery
+        test writes into files/icon_gallery are excluded as well; the application never writes
+        there.
+
+    No <include> element is used anywhere: adding one would restrict the backup to exactly the
+    listed paths and could silently drop saved locations.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="database" path="weather-cache" />
+        <exclude domain="database" path="weather-cache-wal" />
+        <exclude domain="database" path="weather-cache-shm" />
+        <exclude domain="file" path="icon_gallery" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="database" path="weather-cache" />
+        <exclude domain="database" path="weather-cache-wal" />
+        <exclude domain="database" path="weather-cache-shm" />
+        <exclude domain="file" path="icon_gallery" />
     </device-transfer>
-    -->
 </data-extraction-rules>

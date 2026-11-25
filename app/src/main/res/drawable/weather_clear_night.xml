@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Flat Color weather icon. Shared 48x48 geometry and palette: see the "Weather icon
+     design system" section of README.md. Never resize a single element of one icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path android:pathData="M32.47,28.76A11.5,11.5 0 1,1 19.04,12.89A11,11 0 0,0 32.47,28.76Z" android:fillColor="@color/weather_moon" />
+</vector>

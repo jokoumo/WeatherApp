@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Privacy symbol of the information screen: a shield with a check mark, the common metaphor for
+    "data handled deliberately". Drawn for this project and tinted by the caller, so it follows the
+    active theme like the other settings symbols.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12,2.5L19.5,5.5V12C19.5,16.6 16.4,20 12,21.5C7.6,20 4.5,16.6 4.5,12V5.5Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M8.8,12.2L11.2,14.6L15.4,10.2"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
