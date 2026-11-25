@@ -68,22 +68,33 @@ class AppBackStackTest {
         assertEquals(AppDestination.ABOUT, detail.pop().current)
     }
 
-    /** The privacy page hangs below the information page, exactly like the licence detail. */
+    /** The privacy page hangs directly below the settings page, next to appearance and about. */
     @Test
-    fun privacyPageReturnsToAboutAndNotToSettings() {
+    fun privacyPageReturnsToSettingsAndNotToAbout() {
         val privacy = AppBackStack.atDashboard()
             .push(AppDestination.SETTINGS)
-            .push(AppDestination.ABOUT)
             .push(AppDestination.PRIVACY)
 
         assertEquals(AppDestination.PRIVACY, privacy.current)
-        assertEquals(AppDestination.ABOUT, privacy.pop().current)
-        assertEquals(AppDestination.SETTINGS, privacy.pop().pop().current)
+        assertEquals(AppDestination.SETTINGS, privacy.pop().current)
+        assertEquals(AppDestination.DASHBOARD, privacy.pop().pop().current)
         assertEquals(
-            listOf("DASHBOARD", "SETTINGS", "ABOUT", "PRIVACY"),
+            listOf("DASHBOARD", "SETTINGS", "PRIVACY"),
             privacy.toStoredNames(),
         )
         assertEquals(privacy, AppBackStack.fromStoredNames(privacy.toStoredNames()))
+    }
+
+    /** The three settings entries are siblings, so each of them returns to the same parent. */
+    @Test
+    fun appearancePrivacyAndAboutAreSiblingsBelowSettings() {
+        listOf(AppDestination.APPEARANCE, AppDestination.PRIVACY, AppDestination.ABOUT).forEach { entry ->
+            val opened = AppBackStack.atDashboard().push(AppDestination.SETTINGS).push(entry)
+
+            assertEquals(entry, opened.current)
+            assertEquals(AppDestination.SETTINGS, opened.pop().current)
+            assertEquals(AppDestination.DASHBOARD, opened.pop().pop().current)
+        }
     }
 
     /** Popping on the dashboard is a no-op, so back can never leave the application by accident. */

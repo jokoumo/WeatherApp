@@ -26,8 +26,12 @@ object WeatherFormatter {
 
     private val timeFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern("HH:mm", GERMAN_LOCALE)
+    private val hourFormatter: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("HH", GERMAN_LOCALE)
     private val weekdayDateFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern("EEE, d. MMMM", GERMAN_LOCALE)
+    private val longWeekdayDateFormatter: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("EEEE, d. MMMM", GERMAN_LOCALE)
     private val weekdayShortDateFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern("EEE, d. MMM", GERMAN_LOCALE)
     private val shortDateFormatter: DateTimeFormatter =
@@ -49,6 +53,26 @@ object WeatherFormatter {
     /** Temperature value without unit, for example "-3". */
     fun temperatureValue(celsius: Double?): String =
         if (celsius == null) MISSING else integerFormat.format(round(celsius))
+
+    /**
+     * Temperature range of a period, for example "7–12 °C".
+     *
+     * A range is only printed when both ends are known and differ once rounded, because "7–7 °C"
+     * would claim a spread that the data does not report. With a single known value that value is
+     * printed alone, and with nothing known the placeholder stays.
+     */
+    fun temperatureRange(minCelsius: Double?, maxCelsius: Double?): String {
+        if (minCelsius == null && maxCelsius == null) return MISSING
+        if (minCelsius == null) return temperature(maxCelsius)
+        if (maxCelsius == null) return temperature(minCelsius)
+        val lower = minOf(minCelsius, maxCelsius)
+        val upper = maxOf(minCelsius, maxCelsius)
+        if (round(lower) == round(upper)) return temperature(lower)
+        // A range that ends below zero would otherwise read as a row of similar dashes
+        // ("-2–-1 °C"), so the separator gets space around it exactly where it is needed.
+        val separator = if (round(upper) < 0) " \u2013 " else "\u2013"
+        return temperatureValue(lower) + separator + temperature(upper)
+    }
 
     /** Precipitation amount, one decimal for small amounts, for example "1,4 mm". */
     fun millimetres(value: Double?): String {
@@ -76,6 +100,9 @@ object WeatherFormatter {
     fun clockTime(instant: Instant, zoneId: ZoneId): String =
         timeFormatter.format(instant.atZone(zoneId))
 
+    /** Hour of day of an instant in the given zone, for example "22" — used by period ranges. */
+    fun hour(instant: Instant, zoneId: ZoneId): String = hourFormatter.format(instant.atZone(zoneId))
+
     fun clockTime(localDateTime: LocalDateTime): String = timeFormatter.format(localDateTime)
 
     /**
@@ -99,6 +126,9 @@ object WeatherFormatter {
 
     /** "Donnerstag, 22. November" */
     fun weekdayAndDate(date: LocalDate): String = weekdayDateFormatter.format(date)
+
+    /** "Donnerstag, 22. November" with the weekday written out, used by the daily detail sheet. */
+    fun fullWeekdayAndDate(date: LocalDate): String = longWeekdayDateFormatter.format(date)
 
     /** "Do., 22. Nov." */
     fun weekdayAndShortDate(date: LocalDate): String = weekdayShortDateFormatter.format(date)

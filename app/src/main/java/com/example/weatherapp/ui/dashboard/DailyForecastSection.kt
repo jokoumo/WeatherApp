@@ -1,5 +1,6 @@
 package com.example.weatherapp.ui.dashboard
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,11 +8,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,15 +33,32 @@ import com.example.weatherapp.ui.components.StackedDetail
 import com.example.weatherapp.ui.components.WeatherIcon
 import com.example.weatherapp.ui.weather.shortDescriptionRes
 
-/** Large card for one of the next two days, with the full set of daily values. */
+/**
+ * Large card for one of the next two days, with the full set of daily values.
+ *
+ * With an [onClick] the whole card opens the detailed outlook of that day. The affordance is not
+ * only the ripple: a labelled "Details" line with a chevron closes the card, and the click action
+ * carries a German label so a screen reader announces what tapping does.
+ */
 @Composable
 fun DetailedDayCard(
     day: DailyWeather,
     modifier: Modifier = Modifier,
     overline: String? = null,
+    onClick: (() -> Unit)? = null,
 ) {
+    val cardModifier = if (onClick == null) {
+        modifier.fillMaxWidth()
+    } else {
+        modifier
+            .fillMaxWidth()
+            .clickable(
+                onClickLabel = stringResource(R.string.day_card_details_hint),
+                onClick = onClick,
+            )
+    }
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = cardModifier,
         shape = RoundedCornerShape(22.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -120,6 +142,28 @@ fun DetailedDayCard(
                     secondLabel = stringResource(R.string.detail_day_length),
                     secondValue = WeatherFormatter.duration(day.daylightSeconds),
                 )
+            }
+
+            if (onClick != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Text(
+                        text = stringResource(R.string.day_card_details_hint),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }

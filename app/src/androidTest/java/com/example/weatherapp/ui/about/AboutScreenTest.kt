@@ -27,13 +27,12 @@ class AboutScreenTest {
 
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private fun renderAbout(onOpenLicence: (String) -> Unit = {}, onOpenPrivacy: () -> Unit = {}) {
+    private fun renderAbout(onOpenLicence: (String) -> Unit = {}) {
         composeRule.setContent {
             WeatherAppTheme {
                 AboutScreen(
                     onBack = {},
                     onOpenLicence = onOpenLicence,
-                    onOpenPrivacy = onOpenPrivacy,
                 )
             }
         }
@@ -116,22 +115,18 @@ class AboutScreenTest {
         assertEquals(listOf("open-meteo-data"), opened)
     }
 
-    /** The privacy page is entered from here, so the entry has to be present and clickable. */
+    /**
+     * Datenschutz lives on the settings page now. The information page must not offer it a second
+     * time, because two entries for one page make the back hierarchy ambiguous.
+     */
     @Test
-    fun privacyEntryIsPresentAndOpensThePrivacyPage() {
-        var opened = 0
-        renderAbout(onOpenPrivacy = { opened++ })
+    fun privacyEntryMovedOutOfTheInformationPage() {
+        renderAbout()
 
-        val section = composeRule.onNodeWithText(context.getString(R.string.about_section_privacy))
-        section.assertExists()
-
-        val entry = composeRule.onNodeWithText(context.getString(R.string.about_privacy_title))
-        entry.performScrollTo()
-        composeRule.waitForIdle()
-        entry.performClick()
-        composeRule.waitForIdle()
-
-        assertEquals(1, opened)
+        composeRule.onNodeWithText(context.getString(R.string.settings_privacy_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.privacy_screen_title)).assertDoesNotExist()
+        // The page still ends with the licences, which is where the privacy entry used to sit.
+        composeRule.onNodeWithText(context.getString(R.string.licence_icons_title)).assertExists()
     }
 
     /**

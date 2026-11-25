@@ -1,5 +1,9 @@
 package com.example.weatherapp.ui
 
+import android.view.KeyEvent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -7,6 +11,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.weatherapp.R
@@ -21,6 +27,7 @@ import com.example.weatherapp.domain.model.LocationSettings
 import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.domain.model.WeatherCondition
 import com.example.weatherapp.domain.model.WeatherSnapshot
+import com.example.weatherapp.ui.components.SecondaryScreenHeader
 import com.example.weatherapp.ui.dashboard.DashboardScreen
 import com.example.weatherapp.ui.theme.WeatherAppTheme
 import org.junit.Assert.assertTrue
@@ -329,4 +336,226 @@ class DashboardScreenTest {
         composeRule.onNodeWithText(updateLine, substring = true).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.status_cached)).assertDoesNotExist()
     }
+
+    // region toolbar title
+
+    /**
+     * The application name in the toolbar is the most prominent heading of the app: it must never
+     * render smaller than the title of a secondary screen. Both heights are measured in the same
+     * composition, so the comparison also holds when the device uses a large system font.
+     */
+    @Test
+    fun dashboardTitleIsAtLeastAsLargeAsASecondaryScreenTitle() {
+        val secondaryTitle = context.getString(R.string.settings_screen_title)
+        composeRule.setContent {
+            WeatherAppTheme {
+                Box {
+                    DashboardScreen(
+                        state = stateWith(),
+                        onRefresh = {},
+                        onOpenLocations = {},
+                        onOpenSettings = {},
+                        onMessageShown = {},
+                    )
+                    // The shared header of every secondary screen, measured with the same
+                    // typography and the same font scale as the toolbar above.
+                    SecondaryScreenHeader(title = secondaryTitle, onBack = {})
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        val titleHeight = composeRule.onNodeWithText(context.getString(R.string.app_name))
+            .fetchSemanticsNode()
+            .boundsInWindow
+            .height
+        val secondaryHeight = composeRule.onNodeWithText(secondaryTitle)
+            .fetchSemanticsNode()
+            .boundsInWindow
+            .height
+
+        assertTrue(
+            "toolbar title $titleHeight px is smaller than a secondary title $secondaryHeight px",
+            titleHeight >= secondaryHeight,
+        )
+    }
+
+    /** The larger title stays on its own side of the toolbar and never reaches the actions. */
+    @Test
+    fun toolbarTitleStaysClearOfTheActionButtons() {
+        render(stateWith())
+
+        val title = composeRule.onNodeWithText(context.getString(R.string.app_name))
+            .fetchSemanticsNode()
+            .boundsInWindow
+        val refresh = composeRule.onNodeWithContentDescription(context.getString(R.string.action_refresh))
+            .fetchSemanticsNode()
+            .boundsInWindow
+
+        assertTrue("the title overlaps the actions", title.right <= refresh.left)
+        assertTrue("the title is cut off at the left edge", title.left >= 0f)
+    }
+
+    /**
+     * A doubled system font scale is the worst case for the toolbar: the title may shrink to an
+     * ellipsis, but it must stay on screen and the three actions must stay reachable next to it.
+     */
+    @Test
+    fun toolbarStaysUsableWithADoubledFontScale() {
+        val density = context.resources.displayMetrics.density
+        composeRule.setContent {
+            CompositionLocalProvider(
+                LocalDensity provides Density(density = density, fontScale = 2.0f),
+            ) {
+                WeatherAppTheme {
+                    DashboardScreen(
+                        state = stateWith(),
+                        onRefresh = {},
+                        onOpenLocations = {},
+                        onOpenSettings = {},
+                        onMessageShown = {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(context.getString(R.string.app_name)).assertIsDisplayed()
+        val actions = listOf(
+            context.getString(R.string.action_refresh),
+            context.getString(R.string.action_locations),
+            context.getString(R.string.action_settings),
+        ).map { label -> composeRule.onNodeWithContentDescription(label) }
+        val actionBounds = actions.map { node ->
+            node.performClick()
+            composeRule.waitForIdle()
+            node.fetchSemanticsNode().boundsInWindow
+        }
+        val title = composeRule.onNodeWithText(context.getString(R.string.app_name))
+            .fetchSemanticsNode()
+            .boundsInWindow
+        assertTrue(
+            "the title reaches into the actions at a large font scale",
+            title.right <= actionBounds.minOf { it.left },
+        )
+    }
+
+    // endregion
+
+    // region daily detail sheet
+
+    private fun openDailySheet(daysAfterToday: Int) {
+        val date = today.plusDays(daysAfterToday.toLong())
+        composeRule.onNodeWithText(WeatherFormatter.weekdayAndDate(date))
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForIdle()
+    }
+
+    /** Both detailed day cards say what tapping them does. */
+    @Test
+    fun detailedDayCardsOfferTheDetailAction() {
+        render(stateWith())
+
+        composeRule
+            .onAllNodesWithText(context.getString(R.string.day_card_details_hint))
+            .assertCountEquals(2)
+    }
+
+    @Test
+    fun tappingTomorrowOpensTheDailySheetWithItsDateAndFourPeriods() {
+        render(stateWith())
+
+        openDailySheet(1)
+
+        composeRule.onNodeWithText(context.getString(R.string.day_details_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(WeatherFormatter.fullWeekdayAndDate(today.plusDays(1)))
+            .assertIsDisplayed()
+        listOf(
+            R.string.day_period_morning,
+            R.string.day_period_afternoon,
+            R.string.day_period_evening,
+            R.string.day_period_night,
+        ).forEach { label ->
+            composeRule.onNodeWithText(context.getString(label)).assertExists()
+        }
+        // The night reaches into the next morning, which the printed range makes visible.
+        composeRule.onNodeWithText("22–06 Uhr").assertExists()
+        composeRule.onNodeWithText("06–12 Uhr").assertExists()
+        // Four periods, each with its own set of aggregated values.
+        composeRule
+            .onAllNodesWithText(context.getString(R.string.day_period_precipitation_probability))
+            .assertCountEquals(4)
+    }
+
+    @Test
+    fun tappingOvermorgenOpensTheSheetForTheDayAfterTomorrow() {
+        render(stateWith())
+
+        openDailySheet(2)
+
+        composeRule.onNodeWithText(WeatherFormatter.fullWeekdayAndDate(today.plusDays(2)))
+            .assertIsDisplayed()
+        composeRule.onNodeWithText(WeatherFormatter.fullWeekdayAndDate(today.plusDays(1)))
+            .assertDoesNotExist()
+    }
+
+    /**
+     * The test payload has hourly data for today and tomorrow only, so the day after tomorrow is
+     * the honest "no data" case: every period says so instead of showing invented values.
+     */
+    @Test
+    fun dailySheetHandlesMissingHourlyDataGracefully() {
+        render(stateWith())
+
+        openDailySheet(2)
+
+        composeRule
+            .onAllNodesWithText(context.getString(R.string.day_period_no_data))
+            .assertCountEquals(4)
+        composeRule.onNodeWithText(context.getString(R.string.day_period_morning)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.day_period_night)).assertExists()
+    }
+
+    @Test
+    fun dailySheetClosesThroughItsCloseActionAndKeepsTheDashboard() {
+        render(stateWith())
+
+        openDailySheet(1)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_close)).performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(context.getString(R.string.day_details_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.section_hourly)).assertExists()
+        composeRule.onNodeWithText(WeatherFormatter.clockTime(today.atTime(12, 0))).assertIsDisplayed()
+    }
+
+    @Test
+    fun dailySheetClosesWithSystemBack() {
+        render(stateWith())
+
+        openDailySheet(1)
+        composeRule.onNodeWithText(context.getString(R.string.day_details_title)).assertIsDisplayed()
+
+        // A modal bottom sheet lives in its own window, so the system back key is injected the way
+        // the framework delivers it instead of being routed through the activity's dispatcher.
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(context.getString(R.string.day_details_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.section_hourly)).assertExists()
+    }
+
+    /** The hourly sheet and the daily sheet stay separate: one hour chip still opens the hour. */
+    @Test
+    fun hourlySheetStillWorksNextToTheDailySheet() {
+        render(stateWith())
+
+        composeRule.onNodeWithText(WeatherFormatter.clockTime(today.atTime(12, 0))).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(context.getString(R.string.hourly_details_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.day_details_title)).assertDoesNotExist()
+    }
+
+    // endregion
 }

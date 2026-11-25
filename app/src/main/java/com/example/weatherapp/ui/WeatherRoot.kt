@@ -123,6 +123,7 @@ fun WeatherRoot(
                 AppDestination.SETTINGS -> SettingsScreen(
                     onBack = goBack,
                     onOpenAppearance = { open(AppDestination.APPEARANCE) },
+                    onOpenPrivacy = { open(AppDestination.PRIVACY) },
                     onOpenAbout = { open(AppDestination.ABOUT) },
                 )
 
@@ -139,7 +140,6 @@ fun WeatherRoot(
                         licenceId = id
                         open(AppDestination.LICENSE)
                     },
-                    onOpenPrivacy = { open(AppDestination.PRIVACY) },
                 )
 
                 AppDestination.PRIVACY -> PrivacyScreen(onBack = goBack)

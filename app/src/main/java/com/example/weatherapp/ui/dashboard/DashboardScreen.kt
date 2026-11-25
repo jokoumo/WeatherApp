@@ -78,6 +78,7 @@ fun DashboardScreen(
     val weather = state.weather
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedEntry by remember { mutableStateOf<HourlyWindowEntry?>(null) }
+    var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
     val message = state.message
     val messageText = if (message != null) stringResource(message.messageRes()) else null
 
@@ -99,7 +100,10 @@ fun DashboardScreen(
                     title = {
                         Text(
                             text = stringResource(R.string.app_name),
-                            style = MaterialTheme.typography.titleMedium,
+                            // One step above the titleLarge of the secondary screens: the name of
+                            // the application is the most prominent heading in the app. The title
+                            // keeps its own column, so it can never reach into the action icons.
+                            style = MaterialTheme.typography.headlineSmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -159,6 +163,7 @@ fun DashboardScreen(
                             location = location,
                             weather = weather,
                             onHourClick = { selectedEntry = it },
+                            onDayClick = { selectedDay = it },
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -169,6 +174,20 @@ fun DashboardScreen(
         selectedEntry?.let { entry ->
             HourlyDetailSheet(entry = entry, onDismiss = { selectedEntry = null })
         }
+
+        val dayZone = weather.timeZone
+        selectedDay?.let { date ->
+            // The periods are calendar periods of the location, so without its time zone there is
+            // nothing honest to show and the sheet simply stays closed.
+            if (dayZone != null) {
+                DayForecastDetailSheet(
+                    date = date,
+                    hours = weather.sections.allHours,
+                    zone = dayZone,
+                    onDismiss = { selectedDay = null },
+                )
+            }
+        }
     }
 }
 
@@ -177,6 +196,7 @@ private fun WeatherContent(
     location: SavedLocation,
     weather: WeatherUiState,
     onHourClick: (HourlyWindowEntry) -> Unit,
+    onDayClick: (LocalDate) -> Unit,
 ) {
     val zone = weather.timeZone
     val sections = weather.sections
@@ -225,7 +245,11 @@ private fun WeatherContent(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionHeader(title = stringResource(R.string.section_daily))
             sections.detailedDays.forEach { day ->
-                DetailedDayCard(day = day, overline = dayOverline(day.date, weather.today))
+                DetailedDayCard(
+                    day = day,
+                    overline = dayOverline(day.date, weather.today),
+                    onClick = { onDayClick(day.date) },
+                )
             }
         }
     }

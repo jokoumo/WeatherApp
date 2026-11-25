@@ -3,11 +3,11 @@
     <string name="app_name">WetterPlus</string>
 
     <!-- Dashboard sections -->
-    <string name="section_hourly">Nächste 24 Stunden</string>
+    <string name="section_hourly">Nächsten 24 Stunden</string>
     <string name="hourly_day_today">Heute</string>
-    <string name="section_daily">Nächste zwei Tage</string>
+    <string name="section_daily">Nächsten zwei Tage</string>
     <string name="section_extended">Ausblick</string>
-    <string name="extended_hint">Folgende Werte zeigen die Tendenz.</string>
+    <string name="extended_hint">Folgende Werte zeigen nur eine Tendenz.</string>
     <string name="tomorrow">Morgen</string>
     <string name="day_after_tomorrow">Übermorgen</string>
 
@@ -28,6 +28,25 @@
     <string name="min_max_today">Min %1$s · Max %2$s</string>
     <string name="hourly_details_title">Stundendetails</string>
     <string name="content_description_weather_icon">Wettersymbol</string>
+
+    <!-- Daily detail sheet: the four periods of one forecast day -->
+    <string name="action_close">Schließen</string>
+    <string name="day_details_title">Tagesverlauf</string>
+    <string name="day_card_details_hint">Details</string>
+    <string name="day_period_morning">Vormittag</string>
+    <string name="day_period_afternoon">Nachmittag</string>
+    <string name="day_period_evening">Abend</string>
+    <string name="day_period_night">Nacht</string>
+    <string name="day_period_time_range">%1$s–%2$s Uhr</string>
+    <string name="day_period_precipitation_probability">Max. Regenw.</string>
+    <string name="day_period_precipitation">Niederschlag</string>
+    <string name="day_period_wind_average">Wind im Mittel</string>
+    <string name="day_period_wind_gusts">Böen bis</string>
+    <string name="day_period_no_data">Für diesen Zeitraum sind keine Stundendaten verfügbar.</string>
+    <string name="day_period_incomplete">Stundendaten unvollständig – die Werte beziehen sich auf die verfügbaren Stunden.</string>
+    <string name="day_period_severe_hint">Zusätzlich möglich: %1$s</string>
+    <string name="day_period_footnote">Regenwahrscheinlichkeit: höchster Stundenwert im Zeitraum. Niederschlag: Summe der Stundenwerte. Wind: Mittelwert des anhaltenden Windes, Böen: höchster Wert.</string>
+    <string name="content_description_day_period">%1$s: %2$s, %3$s</string>
 
     <!-- Wind indicators -->
     <string name="wind_warning_strong">Starker Wind</string>
@@ -173,10 +192,9 @@
     <string name="licence_icons_title">Wetter- und App-Symbole</string>
     <string name="licence_icons_name">Eigene Erstellung</string>
     <string name="licence_icons_summary">Die Wettersymbole, das App-Symbol und das Symbol für die Darstellungseinstellung als Vektorgrafiken wurden für dieses Projekt gezeichnet. Sie sind keine Dritten-Assets und stammen aus keiner Icon-Bibliothek. Die App enthält außerdem keine Schriftarten, keine Bildbibliothek und keine Emoji-Assets.</string>
-    <!-- Privacy: entry on the information page and the dedicated page itself -->
-    <string name="about_section_privacy">Datenschutz</string>
-    <string name="about_privacy_title">Datenschutz bei WetterPlus</string>
-    <string name="about_privacy_summary">Welche Daten die App speichert und überträgt</string>
+    <!-- Privacy: entry on the settings page and the dedicated page itself -->
+    <string name="settings_privacy_title">Datenschutz</string>
+    <string name="settings_privacy_summary">Welche Daten die App speichert und überträgt</string>
     <string name="privacy_screen_title">Datenschutz</string>
     <string name="privacy_intro">WetterPlus ist eine Wetter-App für den persönlichen Gebrauch: ohne Konto, ohne Werbung und ohne Analyse-Bibliothek im App-Paket. Die folgenden Abschnitte beschreiben, was die App auf dem Gerät speichert und was sie beim Wetterabruf über das Netz überträgt.</string>
     <string name="privacy_section_general">Datenschutz bei WetterPlus</string>

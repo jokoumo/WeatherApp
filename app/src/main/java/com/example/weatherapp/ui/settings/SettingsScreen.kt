@@ -28,13 +28,14 @@ import com.example.weatherapp.R
 import com.example.weatherapp.ui.components.SecondaryScreenScaffold
 
 /**
- * Settings hub: two entries, each of them a full screen of its own. Nothing is expanded in
- * place, so both pages keep the same header and back behaviour as the rest of the app.
+ * Settings hub: three entries, each of them a full screen of its own. Nothing is expanded in
+ * place, so all pages keep the same header and back behaviour as the rest of the app.
  */
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenAppearance: () -> Unit,
+    onOpenPrivacy: () -> Unit,
     onOpenAbout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -55,6 +56,19 @@ fun SettingsScreen(
             title = stringResource(R.string.settings_appearance_title),
             summary = stringResource(R.string.settings_appearance_summary),
             onClick = onOpenAppearance,
+        )
+        SettingsNavigationRow(
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_privacy),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+            },
+            title = stringResource(R.string.settings_privacy_title),
+            summary = stringResource(R.string.settings_privacy_summary),
+            onClick = onOpenPrivacy,
         )
         SettingsNavigationRow(
             icon = {

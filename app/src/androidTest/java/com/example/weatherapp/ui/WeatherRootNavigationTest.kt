@@ -188,9 +188,22 @@ class WeatherRootNavigationTest {
         composeRule.onNodeWithText(context.getString(R.string.settings_about_title)).assertIsDisplayed()
     }
 
+    /** Datenschutz moved up a level, so the information page must not offer it a second time. */
     @Test
-    fun aboutOpensALicenceDetailThatReturnsToAbout() {
+    fun aboutHasNoPrivacyEntryAnymore() {
         renderRoot()
+
+        openSettings()
+        composeRule.onNodeWithText(context.getString(R.string.settings_about_title)).performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(context.getString(R.string.about_section_licenses)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.settings_privacy_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.privacy_intro)).assertDoesNotExist()
+    }
+
+    @Test
+    fun aboutOpensALicenceDetailThatReturnsToAbout() {        renderRoot()
 
         openSettings()
         composeRule.onNodeWithText(context.getString(R.string.settings_about_title)).performClick()
@@ -328,20 +341,39 @@ class WeatherRootNavigationTest {
         assertTrue(mainViewModel.uiState.value.settings.favorites.isNotEmpty())
     }
 
-    /** The privacy page is a screen of its own, entered from the information page. */
+    /** The privacy page is a screen of its own, entered directly from the settings page. */
     private fun openPrivacyPage() {
         openSettings()
-        composeRule.onNodeWithText(context.getString(R.string.settings_about_title)).performClick()
-        composeRule.waitForIdle()
-        val entry = composeRule.onNodeWithText(context.getString(R.string.about_privacy_title))
-        entry.performScrollTo()
-        composeRule.waitForIdle()
-        entry.performClick()
+        composeRule.onNodeWithText(context.getString(R.string.settings_privacy_title)).performClick()
         composeRule.waitForIdle()
     }
 
+    /**
+     * The settings page offers exactly three entries, in this order: Darstellung, Datenschutz,
+     * Infos. The order is asserted through the vertical position of the rows rather than through
+     * a screenshot.
+     */
     @Test
-    fun aboutOpensThePrivacyPageAndItsBackArrowReturnsToAbout() {
+    fun settingsListsAppearancePrivacyAndAboutInThatOrder() {
+        renderRoot()
+
+        openSettings()
+        val rows = listOf(
+            context.getString(R.string.settings_appearance_title),
+            context.getString(R.string.settings_privacy_title),
+            context.getString(R.string.settings_about_title),
+        ).map { label -> composeRule.onNodeWithText(label).fetchSemanticsNode() }
+
+        rows.forEach { node -> assertTrue("a settings row is missing", node.boundsInWindow.height > 0) }
+        val tops = rows.map { it.boundsInWindow.top }
+        assertEquals("rows are stacked in the wrong order", tops.sorted(), tops)
+        // Each row is a separate card, so none of them overlaps the next one.
+        assertTrue(rows[0].boundsInWindow.bottom <= rows[1].boundsInWindow.top)
+        assertTrue(rows[1].boundsInWindow.bottom <= rows[2].boundsInWindow.top)
+    }
+
+    @Test
+    fun settingsOpensPrivacyAndItsBackArrowReturnsToSettings() {
         renderRoot()
 
         openPrivacyPage()
@@ -352,11 +384,10 @@ class WeatherRootNavigationTest {
 
         clickBackArrow()
 
-        // Back landed on the information page again, and the privacy text is gone.
-        val licencesSection = composeRule.onNodeWithText(context.getString(R.string.about_section_licenses))
-        licencesSection.performScrollTo()
-        composeRule.waitForIdle()
-        licencesSection.assertIsDisplayed()
+        // Back landed on the settings page again, and the privacy text is gone.
+        composeRule.onNodeWithText(context.getString(R.string.settings_appearance_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.settings_privacy_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.settings_about_title)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.privacy_intro)).assertDoesNotExist()
     }
 
@@ -369,13 +400,7 @@ class WeatherRootNavigationTest {
         composeRule.onNodeWithText(context.getString(R.string.privacy_screen_title)).assertIsDisplayed()
 
         pressSystemBack()
-        val licencesSection = composeRule.onNodeWithText(context.getString(R.string.about_section_licenses))
-        licencesSection.performScrollTo()
-        composeRule.waitForIdle()
-        licencesSection.assertIsDisplayed()
-
-        pressSystemBack()
-        composeRule.onNodeWithText(context.getString(R.string.settings_appearance_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.settings_privacy_title)).assertIsDisplayed()
 
         pressSystemBack()
         dashboardTitle().assertIsDisplayed()

@@ -114,6 +114,41 @@ class WeatherFormatterTest {
         assertEquals("So.", formatter.weekday(date))
     }
 
+    /** The daily detail sheet names the weekday out so the selected day is unmistakable. */
+    @Test
+    fun `long weekday date omits the year`() {
+        assertEquals("Sonntag, 22. November", formatter.fullWeekdayAndDate(LocalDate.of(2026, 11, 22)))
+        assertEquals("Montag, 30. November", formatter.fullWeekdayAndDate(LocalDate.of(2026, 11, 30)))
+    }
+
+    /** Period ranges are printed as hours only, in the time zone of the location. */
+    @Test
+    fun `hour of day is rendered in the location time zone`() {
+        val berlin = ZoneId.of("Europe/Berlin")
+        assertEquals("06", formatter.hour(Instant.parse("2026-11-30T05:00:00Z"), berlin))
+        assertEquals("22", formatter.hour(Instant.parse("2026-11-30T21:00:00Z"), berlin))
+        assertEquals(
+            "06",
+            formatter.hour(Instant.parse("2026-11-30T00:30:00Z"), ZoneId.of("Asia/Kolkata")),
+        )
+    }
+
+    @Test
+    fun `temperature range only appears when both ends differ`() {
+        assertEquals("7\u201312\u00A0\u00B0C", formatter.temperatureRange(7.4, 11.6))
+        assertEquals("-3\u20132\u00A0\u00B0C", formatter.temperatureRange(-3.2, 2.1))
+        // Both ends below zero: the separator needs space so the range does not read as one long
+        // dash ("-2–-1 °C" would be ambiguous).
+        assertEquals("-2 \u2013 -1\u00A0\u00B0C", formatter.temperatureRange(-2.4, -0.6))
+        // One value, or two that round to the same number, is printed as a single temperature.
+        assertEquals("7\u00A0\u00B0C", formatter.temperatureRange(7.2, 7.4))
+        assertEquals("7\u00A0\u00B0C", formatter.temperatureRange(null, 7.2))
+        assertEquals("7\u00A0\u00B0C", formatter.temperatureRange(7.2, null))
+        assertEquals("\u2013", formatter.temperatureRange(null, null))
+        // The order of the two values never changes the result.
+        assertEquals("7\u201312\u00A0\u00B0C", formatter.temperatureRange(11.6, 7.4))
+    }
+
     @Test
     fun `durations use hours and minutes`() {
         assertEquals("6 h 12 min", formatter.duration(22_320))

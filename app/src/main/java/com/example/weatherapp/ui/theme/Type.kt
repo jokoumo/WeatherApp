@@ -24,6 +24,17 @@ val WeatherTypography = Typography(
         fontSize = 28.sp,
         lineHeight = 34.sp,
     ),
+    /**
+     * Application title of the dashboard toolbar. It sits one step above `titleLarge`, which is
+     * what every secondary screen header uses, so the name of the app never looks smaller than
+     * the name of a page below it. The line height stays inside the 64 dp toolbar.
+     */
+    headlineSmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
+    ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,

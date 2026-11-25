@@ -16,7 +16,7 @@ enum class AppDestination {
     ABOUT,
     LICENSE,
 
-    /** Privacy information, opened from the information page. */
+    /** Privacy information, opened directly from the settings page. */
     PRIVACY,
 }
 

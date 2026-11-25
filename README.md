@@ -17,15 +17,15 @@ All user-visible text is German; source code, comments and this documentation ar
 | --- | --- |
 | Current weather | Temperature, condition, feels-like, today's min/max, humidity, precipitation, cloud cover, wind speed/direction/gusts, pressure. Sustained wind and gusts are checked against the wind warning thresholds and, when exceeded, marked on the weather symbol (see "Wind and gust indicators"). |
 | Hourly (rolling) | Horizontal strip with a rolling 24-hour window: it starts at the hourly interval that **contains** the current time, highlights it, labels every day the window touches ("Heute", "Morgen", weekday) and moves on its own when the hour changes. If that current hour is missing from the response, the earliest later hour starts the window; an already elapsed hour is never used as the start, and if the payload only contains elapsed hours the strip shows the unavailable-data note instead of outdated values. The window covers the current interval plus the following 23 hourly intervals by absolute timestamp, so a gap shortens the list rather than stretching the horizon. Every chip has the same outer height and the same internal layout whether or not it carries a day label, and the precipitation probability is rendered in the same size as the clock time so that "100 %" is never cut off. Tapping an hour opens a "Stundendetails" bottom sheet with all values for that hour, including a plain-text wind warning when that hour exceeds a threshold. |
-| Days 1–2 | Two detailed cards ("Morgen", "Übermorgen") with condition, precipitation probability/amount, wind, gusts, sunshine and day length. |
+| Days 1–2 | Two detailed cards ("Morgen", "Übermorgen") with condition, precipitation probability/amount, wind, gusts, sunshine and day length. Both cards are tappable ("Details" with a chevron): they open a **Tagesverlauf** bottom sheet with the day split into Vormittag, Nachmittag, Abend and Nacht, aggregated from the hourly data of that day (see [Day periods](#day-periods-vormittag-nachmittag-abend-nacht)). |
 | Days 3–15 | Compact list ("Ausblick") with weekday, date, condition icon, precipitation probability/amount and the min/max temperatures as numbers; up to the 16-day forecast horizon of the API. The written condition label and the temperature range bar were removed from these rows: the icon, the numbers and the wind marker carry the same information in less space, and the full wording stays in the detailed cards and in the accessibility label of the icon. |
 | Locations | A home location plus favourites, managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the saved locations live in a list that scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. The screen is entered and left through the **back arrow in its header** ("← Orte verwalten"), like every other secondary screen; the system back button first closes the suggestions. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. Home is a single slot: promoting a favourite to home swaps the two entries, the previous home moving into the favourites at exactly the position the new home had, and the new home becomes the displayed location; no saved place is ever dropped and none appears twice. The last displayed location is restored on the next start. |
 | Refresh | Pull-to-refresh, toolbar refresh button (both bypass the cache), automatic refresh when the app returns to the foreground, and a silent background refresh when the cached response belongs to a previous calendar day in the location's time zone. The hourly window itself advances every hour without any network request. |
 | Offline | The last response per location is cached; with no network the cached data is shown instead of an empty screen. |
 | Appearance | Material 3, rounded cards, condition-dependent gradient header, custom vector weather icons, German date/number formatting, 24-hour time. The theme is a user choice on its own screen: **Systemeinstellung / Hell / Dunkel**, applied immediately, stored, and restored on the next start (see [Appearance and theme](#appearance-and-theme)). |
-| Navigation | One hierarchy for every secondary screen: dashboard → location management, dashboard → settings → appearance, dashboard → settings → information → licence detail, dashboard → settings → information → privacy. Each secondary screen carries a back arrow in its header, the system back button follows the same path, and the dashboard keeps its state (scroll position, loaded forecast) while a secondary screen is open. |
-| Settings and information | A settings screen with two entries ("Darstellung", "Infos"), the appearance page described above, and an information page with the installed version and build number, the weather services behind the data with their links, and the licences of the data and of the shipped libraries — readable offline, with the full licence text opening in the browser. |
-| Privacy and backup | A dedicated **Datenschutz** screen (settings → information → privacy) describing what the app stores, what it sends to the weather service and how backups are handled, with a link to the weather service's own terms and privacy notice. Home location, favourites, ordering, selected location and appearance are eligible for the Android backup; the forecast cache and its database side files are excluded because they can be fetched again (see [Privacy, local storage and backup](#privacy-local-storage-and-backup)). |
+| Navigation | One hierarchy for every secondary screen: dashboard → location management, dashboard → settings → appearance, dashboard → settings → privacy, dashboard → settings → information → licence detail. Each secondary screen carries a back arrow in its header, the system back button follows the same path, and the dashboard keeps its state (scroll position, loaded forecast) while a secondary screen is open. |
+| Settings and information | A settings screen with three entries in this order ("Darstellung", "Datenschutz", "Infos"), the appearance page described above, and an information page with the installed version and build number, the weather services behind the data with their links, and the licences of the data and of the shipped libraries — readable offline, with the full licence text opening in the browser. |
+| Privacy and backup | A dedicated **Datenschutz** screen (settings → privacy) describing what the app stores, what it sends to the weather service and how backups are handled, with a link to the weather service's own terms and privacy notice. Home location, favourites, ordering, selected location and appearance are eligible for the Android backup; the forecast cache and its database side files are excluded because they can be fetched again (see [Privacy, local storage and backup](#privacy-local-storage-and-backup)). |
 | Launcher icon | A custom adaptive icon (warm sun with a soft cloud over it on a deep blue field) with a monochrome layer for themed icons; no template artwork and no bitmaps, so it renders from the same vector on every density. |
 
 ## Data source
@@ -114,6 +114,83 @@ and reports which one caused the warning, so a gust is never presented as sustai
   one place passes `HeaderWindIndicatorColors` (`HeaderWindStrong` neutral, `HeaderStormRed`
   storm) instead of the theme pair. The limit of that choice is documented under
   [Known limitations](#known-limitations).
+
+### Day periods: Vormittag, Nachmittag, Abend, Nacht
+
+Tapping the "Morgen" or "Übermorgen" card opens `ui/dashboard/DayForecastDetailSheet.kt`, a
+Material 3 `ModalBottomSheet` that describes the selected day in four periods. It is the daily
+counterpart of the hourly "Stundendetails" sheet and deliberately a separate component: an hour is
+listed, a period is *aggregated*, and mixing the two would hide which number is measured and which
+one is computed.
+
+**The periods** (`domain/DayPeriodForecast.kt`, `enum DayPeriod`) are calendar periods of the
+**selected location**, resolved to absolute instants with that location's time zone:
+
+| Period | Local time range |
+| --- | --- |
+| Vormittag | 06:00–11:59 |
+| Nachmittag | 12:00–17:59 |
+| Abend | 18:00–21:59 |
+| Nacht | 22:00–05:59 **of the following calendar day** |
+
+- The night belongs to the day it *starts* in: the night of Monday runs Monday 22:00 → Tuesday
+  06:00, and the early hours of Monday itself belong to Sunday's night. Nothing merges the two.
+- Boundaries are computed as `LocalDate.atTime(...).atZone(zone).toInstant()`, so midnight
+  transitions, daylight saving transitions and zones with a fractional offset (+05:30, +05:45)
+  all resolve to the right absolute instants. A wall clock time a DST gap removes is resolved to
+  the first instant after the gap rather than to the previous day.
+- A period is never assumed to hold a fixed number of hours: the night across the spring
+  transition holds 7 hourly points, the one across the autumn transition holds 9 (both
+  occurrences of the repeated 02:00), and a period shorter than its own duration is marked
+  incomplete instead of being quietly padded.
+- The sheet uses the **complete hourly series** of the location, which `ForecastSections.allHours`
+  carries along; the rolling 24-hour strip is only a slice of it, so "Übermorgen" is as complete as
+  "Morgen". Opening, scrolling and closing the sheet never send a request — asserted by
+  `DayForecastSheetNavigationTest`.
+
+**Aggregation rules** (all in `buildDayPeriodForecast`, none in a composable):
+
+| Value | Rule |
+| --- | --- |
+| Temperature | Minimum and maximum of the available hourly temperatures, printed as `7–12 °C`. One known value is printed alone; a range is never invented. |
+| Precipitation probability | **Maximum** of the hourly probabilities, labelled "Max. Regenw." — the highest hourly value, not a combined "at some point during the period" probability. Hourly probabilities are never multiplied together. |
+| Precipitation amount | Sum of the hourly amounts inside the period. A period without a single reported amount stays an en dash, and a period whose hourly series is shorter than the period says so in text instead of presenting a partial sum as a total. |
+| Wind | Arithmetic mean of the available sustained hourly wind speeds ("Wind im Mittel"). Missing, negative and non-finite values are ignored. |
+| Gusts | Maximum of the available hourly gust values ("Böen bis"), kept separate from sustained wind. |
+| Wind warning | `WindWarningClassifier` on the strongest sustained wind and the strongest gust of the period, so the indicator and its text name the measurement that caused it. |
+
+**Representative condition.** A period is not represented by its first hour, nor by a single brief
+extreme. `representativeCondition(hours)` works in five documented steps:
+
+1. Hours without a condition, and `UNKNOWN`, carry no information and are skipped.
+2. Every remaining hour votes for its coarse condition group (clear, partly cloudy, overcast, fog,
+   drizzle, rain, snow grains, snow, freezing precipitation, thunderstorm, hail) with a weight of
+   1, 1.5 or 2 depending on how heavy its reported precipitation is — so steady rain outweighs an
+   equal number of quiet hours, and cloud cover enters through the groups themselves.
+3. The group with the highest total weight wins; ties go to the more significant group, which keeps
+   the result independent of the order of the payload.
+4. Inside the winning group the most frequent concrete WMO condition wins (ties to the heavier one),
+   so one heavy hour cannot speak for a whole period.
+5. The day/night variant follows the period: the majority of the hours that report a sun state
+   decides, which is what makes the night period show a moon.
+
+A brief but significant event is still not hidden: `severeCondition` reports the strongest
+thunderstorm or hail of the period, and when it differs from the representative condition the card
+names it separately ("Zusätzlich möglich: Gewitter").
+
+**Missing data.** A period with no hourly point at all says "Für diesen Zeitraum sind keine
+Stundendaten verfügbar." instead of showing zeros; a period with some values shows exactly those
+and nothing more. A reported zero is a measurement, not a gap: an hour that says "0 mm"
+contributes to the sum, and only an hour whose amount is absent is skipped — so a dry period reads
+"0 mm" while an unreported one reads "–". The sheet ends with one footnote that states what the
+three numbers mean, and the weather symbol of each period carries a German accessibility
+description with the condition and the temperature range, so nothing depends on the icon or a
+colour alone.
+
+**Layout at large text sizes.** The four values of a period sit in one row of four columns at the
+normal system font size. From a system font scale of 1.3 they are laid out as two rows of two, so
+a column never becomes narrow enough to split a unit like "12 km/h" across lines. The sheet itself
+scrolls, which keeps all four periods reachable on a small screen and at every font scale.
 
 ### Weather icon design system
 
@@ -307,9 +384,9 @@ Dashboard (toolbar: WetterPlus · Aktualisieren · Orte · Einstellungen)
 ├── Orte verwalten
 └── Einstellungen
     ├── Darstellung
+    ├── Datenschutz
     └── Infos
-        ├── Lizenzdetail (for one licence entry)
-        └── Datenschutz
+        └── Lizenzdetail (for one licence entry)
 ```
 
 - Every secondary screen is built from `ui/components/SecondaryScreen.kt`: a header with a
@@ -324,7 +401,16 @@ Dashboard (toolbar: WetterPlus · Aktualisieren · Orte · Einstellungen)
 - The location manager keeps its own inner back order: the first back press closes the search
   suggestions, the second leaves the screen.
 - The toolbar title is the application name, not the location; the location stays visible in
-  the current-weather card, which is the only place it is needed.
+  the current-weather card, which is the only place it is needed. It is set in `headlineSmall`
+  (24 sp), one step above the `titleLarge` (21 sp) every secondary header uses, so the name of
+  the app is never smaller than the name of a page below it. The title keeps its own column
+  inside the standard 64 dp `TopAppBar`, so it ellipsizes instead of reaching into the three
+  action buttons, and it scales with the system font size.
+- The two detailed day cards open the daily detail sheet described in
+  [Day periods](#day-periods-vormittag-nachmittag-abend-nacht). The sheet is a bottom sheet of the
+  dashboard, not a destination of the back stack: the dashboard stays composed underneath it, and
+  closing it (close button, swipe down or system back) leaves the scroll position and the loaded
+  forecast untouched.
 
 ## Appearance and theme
 
@@ -356,9 +442,10 @@ values cannot drift away from the build that is actually running.
 
 ## Privacy, local storage and backup
 
-The app documents its own data handling inside the app: **Einstellungen → Infos → Datenschutz**
+The app documents its own data handling inside the app: **Einstellungen → Datenschutz**
 opens a full screen (`ui/about/PrivacyScreen.kt`) with the same header and back behaviour as every
-other secondary screen. Its text is written from what the code really does, and the section
+other secondary screen — the entry sits between "Darstellung" and "Infos", and the information page
+no longer repeats it. Its text is written from what the code really does, and the section
 headings are the ones in `strings.xml`: overview, data stored on the device, forecast requests,
 place search, cookies and tracking, storage and backup, and the weather service's own notice,
 which links to the official Open-Meteo terms and privacy page
@@ -422,9 +509,9 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 ```powershell
 .\gradlew.bat assembleDebug          # debug APK
-.\gradlew.bat testDebugUnitTest      # unit tests (234)
+.\gradlew.bat testDebugUnitTest      # unit tests (274)
 .\gradlew.bat lintDebug              # Android lint
-.\gradlew.bat connectedDebugAndroidTest   # 91 instrumented + Compose UI tests on a running device
+.\gradlew.bat connectedDebugAndroidTest   # 106 instrumented + Compose UI tests on a running device
 .\gradlew.bat installDebug           # install on the connected device/emulator
 ```
 
@@ -494,6 +581,27 @@ leaves no row behind);
   dark backgrounds, the **header wind palette staying readable on every header gradient** (neutral
   at 3:1 or better, storm red distinguishable, neutral lighter than the gradient and storm red
   actually red), and no warning having no colour).
+- **Day periods** (`DayPeriodForecastTest`, 35 tests): the four period windows as absolute instants
+  — Vormittag 06:00–11:59, Nachmittag 12:00–17:59, Abend 18:00–21:59, Nacht 22:00–05:59 — each
+  checked at both boundaries (the hour before, the first hour, the last hour, the hour after); the
+  night belonging to the day it *starts* in, holding the early hours of the next calendar day while
+  the early hours of the selected day belong to the previous night; aggregation (minimum and maximum
+  temperature, the **highest** hourly precipitation probability instead of a combined value, the sum
+  of the hourly amounts with a reported zero counting as a measurement, the arithmetic mean of the
+  sustained wind, the highest gust, and a wind warning caused by gusts alone); missing values staying
+  missing (no temperature, no amount, no condition, never a zero, an unavailable period, and a period
+  whose data only partly covers its hours being reported as incomplete); the order of the payload
+  never changing a result; time zones (the short night across the spring transition holding 7 hourly
+  points, the long night across the autumn transition holding 9 with both occurrences of the repeated
+  02:00, a half-hour zone at +05:30, a quarter-hour zone at +05:45, and the location zone being used
+  rather than the device zone); the representative condition (dominant group, related conditions
+  adding up, heavy hours outweighing a larger number of quiet hours, a brief thunderstorm staying
+  visible as a separate hint while the period itself reads "Bedeckt", a mostly stormy period
+  representing the storm, the strongest hail being named, the day/night variant following the
+  majority of the period's own hours, and `UNKNOWN` carrying no vote); and the data source (a
+  complete 96-hour series yielding 6/6/4/8 hours for the four periods while the rolling 24-hour
+  subset yields nothing for the day after tomorrow, and `ForecastSections.allHours` carrying all 72
+  hours of the response while the strip shows 24).
 - **Theme, navigation, information content and backup configuration** (35 tests):
   `ThemeModeTest` (8) — the default is `SYSTEM`, every stored name round-trips, an unknown, blank
   or malformed value falls back to `SYSTEM`, matching is trimmed and case-insensitive, the stored
@@ -504,10 +612,11 @@ leaves no row behind);
   itself, a failing write keeps the choice and reports it, the warning is cleared by the next
   selection, and a theme change never writes the location settings nor triggers a forecast request
   (both stores wired to a real `MainViewModel`);
-  `AppBackStackTest` (11) — the dashboard is the root and offers no back action, dashboard ↔
+  `AppBackStackTest` (12) — the dashboard is the root and offers no back action, dashboard ↔
   location management, dashboard ↔ settings, settings ↔ appearance, settings ↔ about, licence
-  detail returns to about and not to settings, the **privacy page** returns to about and not to
-  settings (and its stored names round-trip), popping the dashboard is a no-op that can never
+  detail returns to about and not to settings, the **privacy page** returns to settings and not to
+  about (and its stored names round-trip), appearance/privacy/about being siblings below settings,
+  popping the dashboard is a no-op that can never
   empty the stack, the stack round-trips through its stored names, and unknown or truncated stored
   names come back as the dashboard instead of crashing;
   `AboutContentTest` (6) — licence ids are unique and resolvable, every entry carries resource
@@ -541,17 +650,31 @@ leaves no row behind);
   `LocationRepository`** (with an in-memory `SettingsStore`) through the UI promotes a favourite
   to home, puts the previous home back into the favourites at the slot the new home left, keeps
   every place on screen exactly once and stores the new home as the selected location.
-- **Navigation through the real root composable** (`WeatherRootNavigationTest`, 15 tests): the
+- **Navigation through the real root composable** (`WeatherRootNavigationTest`, 17 tests): the
   dashboard toolbar carries the application name; settings, location management, appearance, about,
   a licence detail and the **privacy page** each open as their own screen and return to the right
-  parent through the header arrow; the licence detail and the privacy page return to about and not
-  to settings; the location manager has
+  parent through the header arrow; the licence detail returns to about and not to settings, while the
+  **privacy page returns to settings** and not to about; the settings screen lists its three entries
+  in the order **Darstellung, Datenschutz, Infos** (their measured positions are compared, not just
+  their presence); the information page has **no** privacy entry anymore; the location manager has
   **exactly one** back arrow, so the floating button is gone; the **system back button** walks the
   same hierarchy (appearance → settings → dashboard, licence → about → settings → dashboard and
-  privacy → about → settings → dashboard);
+  privacy → settings → dashboard);
   and opening settings, appearance, the location manager or the privacy page and coming back sends
   **no** forecast request, writes the location settings **no** extra time, and keeps the selected
   location and the favourites untouched.
+- **Daily detail sheet on the dashboard** (`DashboardScreenTest`, 19 tests, and
+  `DayForecastSheetNavigationTest`, 3 tests): the toolbar title is measured **at least as tall** as
+  the title of a secondary screen header in the same composition, stays clear of the three action
+  buttons (bounds compared) and remains usable with a doubled font scale; both detailed day cards
+  offer the "Details" action; tapping "Morgen" opens a sheet whose header names that date and shows
+  the four period labels with their printed ranges ("06–12 Uhr" … "22–06 Uhr"), tapping "Übermorgen"
+  opens the sheet for the day after tomorrow; a day without hourly data shows the unavailable notice
+  in all four periods instead of values; the close button and the **system back key** both leave the
+  sheet and keep the dashboard usable; the hourly "Stundendetails" sheet still works next to the new
+  one; and driving the **real `MainViewModel`** with a counting fake API, both cards open their sheet
+  with four populated periods **without a single additional forecast request** (the call counter is
+  compared before and after opening, scrolling and closing).
 - **Privacy page** (`PrivacyScreenTest`, 9 tests): the header shows the German title and the back
   action, all seven topics have their own heading, the back arrow leaves the page, the link at the
   end of a long scrolling page is reachable by scrolling, the whole notice is present without any
@@ -577,7 +700,8 @@ leaves no row behind);
   number on screen are read from `PackageInfo` rather than written into the layout, the weather
   source section and the licence section are present, the model wording states that the model
   depends on the location and names `best_match`, every licence row is listed and opens its own
-  page, the **Datenschutz entry is present and opens the privacy page**, and a licence page carries
+  page, the **Datenschutz entry is no longer present** (it lives on the settings screen, and the
+  test asserts that the information page does not offer it a second time), and a licence page carries
   author, licence identifier, summary and the offline note without
   a network — the library page additionally lists the components it covers.
 - **Theme preference against a real DataStore file** (`ThemeStoreTest`, 5 tests): `SYSTEM` for a
@@ -884,6 +1008,8 @@ Same emulator (`Medium_Phone_API_37.0`, API 37, 1080×2400), real API traffic, s
 - **Entry** (`n21_settings.png`, `n23_about_privacy_entry.png`): the information page ends with the
   section "Datenschutz" and the row "Datenschutz bei WetterPlus / Welche Daten die App speichert
   und überträgt" with the shield icon and a chevron; tapping it opens a full screen, not a dialog.
+  *(That entry has since moved to the settings screen — see the current iteration below; the same
+  screen and the same back behaviour were re-verified there.)*
 - **Privacy page, light** (`n24_privacy_top.png`, `n25_privacy_middle.png`,
   `n26_privacy_backup.png`, `n27_privacy_bottom.png`): "← Datenschutz" at the top left, then the
   intro and the seven sections; the stored values, the transmitted values and the two endpoints are
@@ -898,7 +1024,8 @@ Same emulator (`Medium_Phone_API_37.0`, API 37, 1080×2400), real API traffic, s
   `n32_privacy_dark_requests.png`): the same content on the dark surface, list marks in the primary
   colour, cards and text still separated.
 - **Back behaviour**: arrow on the privacy page → "Infos"; arrow → "Einstellungen"; system back →
-  dashboard. The dashboard afterwards still showed Hamburg with its forecast.
+  dashboard. The dashboard afterwards still showed Hamburg with its forecast. *(The privacy page now
+  sits one level higher: arrow → "Einstellungen", system back → dashboard, re-verified below.)*
 - **Storage as it really is** (`run-as com.example.weatherapp ls`):
   `files/datastore/weather-settings.preferences_pb` (467 bytes with two saved places),
   `databases/weather-cache`, `weather-cache-wal`, `weather-cache-shm`, plus `cache/` and
@@ -917,6 +1044,58 @@ Same emulator (`Medium_Phone_API_37.0`, API 37, 1080×2400), real API traffic, s
   were (transport `com.google.android.gms/.backup.BackupTransportService`, backup disabled).
 - Logcat for the whole session: empty crash buffer, no `FATAL EXCEPTION`, no warning or error
   logged by the application process.
+
+### Settings entry for Datenschutz, toolbar title and daily detail sheets (current iteration)
+
+Verified on the `Medium_Phone_API_37.0` emulator (1080 × 2400) with the debug APK installed through
+`installDebug`; screenshots were taken at each step and inspected.
+
+- **First start and live data**: the setup screen offers the search field, typing "Hamburg" brings up
+  the live geocoding suggestions, and choosing "Hamburg / Freie und Hansestadt Hamburg, Deutschland"
+  loads a real forecast (2 °C, Bedeckt, wind 12 km/h, gusts 27 km/h).
+- **Toolbar title**: "WetterPlus" renders in `headlineSmall` and is visibly larger than the section
+  headers below it ("Nächste 24 Stunden", "Nächste zwei Tage") and than the header of any secondary
+  screen. With the system font scale set to 1.5 the title stays on one line inside the toolbar and
+  clear of the three action buttons; the scale was set back to 1.0 afterwards.
+- **Settings navigation**: the settings screen shows exactly three rows in the order **Darstellung,
+  Datenschutz, Infos**, the middle one with the shield symbol and the summary "Welche Daten die App
+  speichert und überträgt". Tapping it opens the existing privacy screen with its own header
+  "Datenschutz"; the header arrow returns to "Einstellungen". The information page ends with the
+  licence list ("Wetter- und App-Symbole / Eigene Erstellung") and contains **no** privacy entry.
+- **Daily detail sheet, "Morgen"**: the card carries the "Details ›" affordance, and tapping it opens
+  a bottom sheet headed "Tagesverlauf · Donnerstag, 26. November" with the four periods
+  **06–12 Uhr, 12–18 Uhr, 18–22 Uhr, 22–06 Uhr**, each with its symbol, condition, temperature range
+  and the four aggregated values ("Max. Regenw. 0 %", "Niederschlag 0 mm", "Wind im Mittel 5 km/h",
+  "Böen bis 13 km/h"), followed by the footnote explaining the three rules.
+- **Daily detail sheet, "Übermorgen"**: the second card opens the sheet for "Freitag, 27. November"
+  with the same four periods, aggregated from the hourly series of that day — the day after tomorrow
+  is as complete as tomorrow.
+- **Night across midnight**: the "Nacht" period of both days is printed as 22–06 Uhr and holds the
+  early hours of the following calendar day, which the printed range makes visible.
+- **Day/night symbol follows the period's own hours**: the Vormittag of 26 November shows the moon
+  with "Klar", because three of its four clear hours (06:00–08:00) lie before sunrise — checked
+  against the `is_day` values the API itself returns for those hours.
+- **Dismiss and back hierarchy**: the close button and the **system back key** each leave the sheet;
+  afterwards the dashboard still shows Hamburg with its forecast, and the hourly "Stundendetails"
+  sheet still opens next to the new one.
+- **Offline**: with Wi-Fi and mobile data switched off, the dashboard shows the cached report under
+  "Zuletzt aktualisiert: vor 14 Minuten" instead of an error, and the daily sheet still renders all
+  four periods from the cached hourly series.
+- **Large text**: at a system font scale of 1.5 the four values of a period are laid out as two rows
+  of two, all four periods and the footnote stay reachable by scrolling, and no value is cut off.
+- **Light and dark**: both schemes captured for the dashboard and for the sheet; the theme was set
+  back to "Systemeinstellung" at the end of the session.
+- **Logcat** for the session: no `FATAL EXCEPTION`, no warning or error logged by the application
+  process (only the emulator's own GPU/CPU-variant notices).
+
+Two defects were found by this on-device pass and fixed: a period whose hours all reported 0 mm
+rendered as "–" because a reported zero had been filtered out as if it were missing, and a
+temperature range below zero rendered as "-2–-1 °C", which now prints as "-2 – -1 °C".
+
+Not verified on the device in this iteration: that opening a sheet sends **no** forecast request was
+proven by the instrumented test that counts the calls of a fake API
+(`DayForecastSheetNavigationTest`), not by inspecting the emulator's network traffic; the offline
+run above only shows that the sheet needs no request to render.
 
 Not verified in this iteration: a real Google cloud backup and a physical device-to-device
 transfer (both need an account and a second device) — the `<device-transfer>` section was reviewed
@@ -944,8 +1123,17 @@ application.
 - Offline support depends on previously fetched data; a first start without network shows an
   empty/error state instead of fabricated data.
 - Hourly detail is available for the hours inside the rolling 24-hour window (which can reach
-  into tomorrow), not for arbitrary days; the 16-day outlook is daily data only, because the
-  compact day list has no hourly drill-down.
+  into tomorrow) as exact values, and for "Morgen" and "Übermorgen" as period aggregates; the
+  compact outlook from day 3 onwards stays daily data only, because its rows offer no drill-down.
+  The hourly series of a response covers the whole 16-day horizon, so extending the period sheets
+  to later days would need no additional request — leaving it at the two detailed cards is a layout
+  decision, not a data limit.
+- The four period values are **derived** from the hourly data, not reported by the weather service:
+  the probability is the highest hourly value rather than a combined "at some point" figure, the
+  amount is a sum, the wind is a mean. The representative condition is a documented, deterministic
+  heuristic (group frequency weighted by intensity, then the most frequent concrete condition, then
+  the majority day/night state) — it summarises a period and does not claim that the whole period
+  looked like that, which is why a brief thunderstorm or hail is named separately.
 - The rolling hourly window is bounded by **24 hours of forecast time**, not by 24 records: a
   gap in the payload means fewer than 24 chips, and the horizon is never stretched just to
   fill the strip. A payload whose hours have all already elapsed yields no window at all, so

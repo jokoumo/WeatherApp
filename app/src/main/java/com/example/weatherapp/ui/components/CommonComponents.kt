@@ -61,11 +61,18 @@ fun WeatherIcon(
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
     windIndicatorColors: WindIndicatorColors = LocalWindIndicatorColors.current,
+    /**
+     * What a screen reader reads instead of the generic "Wettersymbol". Views that show the
+     * condition as text next to the symbol pass nothing; views where the symbol carries the whole
+     * statement pass a German sentence.
+     */
+    contentDescriptionOverride: String? = null,
 ) {
     Box(modifier = modifier.size(size)) {
         Image(
             painter = painterResource(id = weatherIconRes(condition, precipitation)),
-            contentDescription = stringResource(R.string.content_description_weather_icon),
+            contentDescription = contentDescriptionOverride
+                ?: stringResource(R.string.content_description_weather_icon),
             modifier = Modifier.size(size),
         )
         if (windWarning.isWarning) {

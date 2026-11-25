@@ -52,9 +52,15 @@ data class ForecastSections(
     val todayHours: List<HourlyWeather>,
     val detailedDays: List<DailyWeather>,
     val extendedDays: List<DailyWeather>,
+    /**
+     * Every hourly forecast point of the snapshot, sorted and free of duplicates. The rolling
+     * strip only shows a slice of it; the daily detail sheet needs the whole series to describe
+     * the day after tomorrow, which is why it travels along instead of being re-downloaded.
+     */
+    val allHours: List<HourlyWeather>,
 ) {
     companion object {
-        val EMPTY = ForecastSections(emptyList(), emptyList(), emptyList(), emptyList())
+        val EMPTY = ForecastSections(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
     }
 }
 
@@ -83,6 +89,7 @@ fun buildForecastSections(
         todayHours = hours.filter { it.localDate == today },
         detailedDays = futureDays.take(DETAILED_DAY_COUNT),
         extendedDays = futureDays.drop(DETAILED_DAY_COUNT),
+        allHours = hours,
     )
 }
 
