@@ -195,4 +195,8 @@ class NoForecastCache : ForecastCacheStore {
     override suspend fun save(locationId: String, fetchedAt: Instant, payloadJson: String) = Unit
 
     override suspend fun delete(locationId: String) = Unit
+
+    override suspend fun locationIds(): List<String> = emptyList()
+
+    override suspend fun deleteAll(locationIds: List<String>) = Unit
 }

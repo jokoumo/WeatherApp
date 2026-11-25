@@ -84,7 +84,10 @@ fun WeatherRoot(
             CircularProgressIndicator()
         }
 
-        !state.settings.hasAnyLocation -> LocationSetupScreen(
+        // The setup screen is only for an app that knows no place at all. A state without a home
+        // location but with favorites or history is unusual rather than broken: its locations stay
+        // reachable on the dashboard, and "Als Hauptstandort setzen" restores the missing role.
+        !state.settings.hasSelectableLocation -> LocationSetupScreen(
             search = state.search,
             onQueryChange = viewModel::onSearchQueryChange,
             onLocationChosen = { location ->
@@ -119,7 +122,6 @@ fun WeatherRoot(
                     onSelectSearched = viewModel::selectSearchedLocation,
                     onToggleFavorite = viewModel::toggleFavorite,
                     onSetHome = viewModel::setHomeLocation,
-                    onRemove = viewModel::removeLocation,
                     onRemoveRecent = viewModel::removeRecentLocation,
                     onClearRecent = viewModel::clearRecentLocations,
                     onMove = viewModel::moveFavorite,

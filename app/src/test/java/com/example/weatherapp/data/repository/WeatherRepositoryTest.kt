@@ -258,6 +258,10 @@ class WeatherRepositoryTest {
             override suspend fun save(locationId: String, fetchedAt: Instant, payloadJson: String) = Unit
 
             override suspend fun delete(locationId: String) = Unit
+
+            override suspend fun locationIds(): List<String> = throw IOException("disk failure")
+
+            override suspend fun deleteAll(locationIds: List<String>) = Unit
         }
         val result = WeatherRepository(api, throwingCache, mapper, clock).load(hamburg)
         assertEquals(SnapshotSource.LIVE, result.source)

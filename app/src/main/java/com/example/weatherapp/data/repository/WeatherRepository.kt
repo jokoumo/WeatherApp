@@ -59,12 +59,26 @@ class WeatherRepository(
     }
 
     /**
-     * Drops the cached forecast of [locationId]. Used when a location is deleted: without this
-     * call the row of a location nobody uses any more would stay in the database indefinitely.
+     * Drops the cached forecast of [locationId]. Used when a location stops being referenced:
+     * without this call the row of a location nobody uses any more would stay in the database
+     * indefinitely.
      */
     suspend fun dropCache(locationId: String) {
         runCatching { cacheStore.delete(locationId) }
             .onFailure { Log.w(TAG, "Removing forecast cache failed", it) }
+    }
+
+    /** Every location id that currently holds a cached forecast. */
+    suspend fun cachedLocationIds(): List<String> =
+        runCatching { cacheStore.locationIds() }
+            .onFailure { Log.w(TAG, "Reading forecast cache keys failed", it) }
+            .getOrDefault(emptyList())
+
+    /** Drops several cached forecasts at once; an empty collection does nothing. */
+    suspend fun dropCaches(locationIds: Collection<String>) {
+        if (locationIds.isEmpty()) return
+        runCatching { cacheStore.deleteAll(locationIds.toList()) }
+            .onFailure { Log.w(TAG, "Removing forecast cache entries failed", it) }
     }
 
     /**

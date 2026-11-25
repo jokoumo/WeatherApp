@@ -6,6 +6,7 @@ import com.example.weatherapp.data.repository.SnapshotSource
 import com.example.weatherapp.data.repository.WeatherRepository
 import com.example.weatherapp.domain.model.DataLoadFailure
 import com.example.weatherapp.domain.model.LocationSettings
+import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.testing.FakeForecastApi
 import com.example.weatherapp.testing.FakeForecastCacheStore
 import com.example.weatherapp.testing.FakeGeocodingApi
@@ -14,6 +15,7 @@ import com.example.weatherapp.testing.MutableClock
 import com.example.weatherapp.testing.berlin
 import com.example.weatherapp.testing.geocoderResult
 import com.example.weatherapp.testing.hamburg
+import com.example.weatherapp.testing.newYork
 import com.example.weatherapp.testing.paris
 import com.example.weatherapp.testing.sampleForecastDto
 import com.example.weatherapp.testing.tokyo
@@ -39,7 +41,9 @@ import java.time.Instant
 
 /**
  * Presentation behaviour of [MainViewModel]: initial loading, refresh rules, location
- * switching with in-flight requests, error handling and the search debounce.
+ * switching with in-flight requests, error handling and the search debounce. The second half
+ * covers the forecast cache - which location changes may delete a row and which must not - and the
+ * favorite star, whose transitions are decided by the repository rather than by the view model.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModelTest {
@@ -425,9 +429,188 @@ class MainViewModelTest {
         assertTrue("the remaining location keeps its forecast", cache.entries.containsKey(hamburg.id))
     }
 
+    // ---------------------------------------------------------------- cache consistency
+
+    /**
+     * A history that grows past its capacity evicts the least recent entry. The forecast of that
+     * entry can never be read again, so it is removed together with the entry, while every place
+     * that is still kept holds on to its row.
+     */
     @Test
-    fun `today extremes are derived from today hourly values`() = withViewModel {
+    fun `an evicted history entry loses its cached forecast`() = withViewModel(
+        initialSettings = LocationSettings(
+            homeLocation = hamburg,
+            selectedLocationId = hamburg.id,
+            recentLocations = (1..LocationSettings.MAX_RECENT_LOCATIONS).map { index ->
+                SavedLocation(
+                    id = "hist-$index",
+                    name = "Verlaufsort $index",
+                    latitude = index * 0.1,
+                    longitude = 5.0,
+                )
+            },
+        ),
+    ) {
         advanceUntilIdle()
+        val newest = SavedLocation(id = "hist-1", name = "Verlaufsort 1", latitude = 0.1, longitude = 5.0)
+        val evicted = SavedLocation(
+            id = "hist-${LocationSettings.MAX_RECENT_LOCATIONS}",
+            name = "Verlaufsort ${LocationSettings.MAX_RECENT_LOCATIONS}",
+            latitude = LocationSettings.MAX_RECENT_LOCATIONS * 0.1,
+            longitude = 5.0,
+        )
+        cache.save(newest.id, now, "{}")
+        cache.save(evicted.id, now, "{}")
+
+        viewModel.selectSearchedLocation(newYork)
+        advanceUntilIdle()
+
+        val settings = viewModel.uiState.value.settings
+        assertEquals(LocationSettings.MAX_RECENT_LOCATIONS, settings.recentLocations.size)
+        assertEquals(newYork.id, settings.recentLocations.first().id)
+        assertFalse("the least recent entry was evicted", settings.recentLocations.any { it.id == evicted.id })
+        assertFalse("the evicted place still holds a forecast", cache.entries.containsKey(evicted.id))
+        assertTrue("a retained history entry keeps its forecast", cache.entries.containsKey(newest.id))
+        assertTrue("the home location keeps its forecast", cache.entries.containsKey(hamburg.id))
+        assertTrue("the newly selected location was cached", cache.entries.containsKey(newYork.id))
+    }
+
+    /**
+     * Rows that no role refers to any more - written by an older version, or left behind when the
+     * app was closed between an eviction and its cleanup - are removed once per app start.
+     */
+    @Test
+    fun `cache rows nobody refers to are removed on start`() = withViewModel {
+        cache.save("orphaned-place", now, "{}")
+        advanceUntilIdle()
+
+        assertFalse(cache.entries.containsKey("orphaned-place"))
+        assertTrue("the selected location keeps its forecast", cache.entries.containsKey(hamburg.id))
+    }
+
+    /**
+     * Cleanup only ever touches rows that are provably unreferenced. A place that merely lost its
+     * favorite status is still selected and still in the history, so its forecast stays on the
+     * device and the dashboard keeps working offline.
+     */
+    @Test
+    fun `unfavoriting a place keeps its cached forecast`() = withViewModel {
+        advanceUntilIdle()
+        viewModel.toggleFavorite(berlin)
+        advanceUntilIdle()
+        viewModel.selectLocation(berlin.id)
+        advanceUntilIdle()
+        assertTrue(cache.entries.containsKey(berlin.id))
+
+        val deletesBefore = cache.deleteCount
+        viewModel.toggleFavorite(berlin)
+        advanceUntilIdle()
+
+        assertEquals("nothing may be deleted while the place is still in use", deletesBefore, cache.deleteCount)
+        assertTrue(cache.entries.containsKey(berlin.id))
+        assertTrue(cache.entries.containsKey(hamburg.id))
+    }
+
+    // ---------------------------------------------------------------- favorite toggling
+
+    /**
+     * Two taps on the star in quick succession have to produce two real changes. The transition is
+     * decided inside the repository, so the second tap sees what the first one wrote instead of the
+     * interface state that was current when the first tap arrived.
+     */
+    @Test
+    fun `two rapid star taps add and remove the favorite again`() = withViewModel {
+        advanceUntilIdle()
+
+        viewModel.toggleFavorite(berlin)
+        viewModel.toggleFavorite(berlin)
+        advanceUntilIdle()
+
+        val settings = viewModel.uiState.value.settings
+        assertTrue("the second tap has to undo the first one", settings.favorites.isEmpty())
+        assertEquals(listOf(berlin.id), settings.recentLocations.map { it.id })
+        assertEquals(UserMessage.LOCATION_REMOVED_FROM_FAVORITES, viewModel.uiState.value.message)
+    }
+
+    /** The star of the home location reports the protected role instead of switching it off. */
+    @Test
+    fun `the star of the home location reports that it is protected`() = withViewModel {
+        advanceUntilIdle()
+
+        viewModel.toggleFavorite(hamburg)
+        advanceUntilIdle()
+
+        assertEquals(UserMessage.HOME_LOCATION_PROTECTED, viewModel.uiState.value.message)
+        assertEquals(hamburg.id, viewModel.uiState.value.settings.homeLocation?.id)
+        assertTrue(viewModel.uiState.value.settings.favorites.isEmpty())
+    }
+
+    // ------------------------------------------------------- identifying the location early
+
+    /**
+     * The dashboard names the place the user picked as soon as it is selected: the location belongs
+     * to the weather state from the first moment on, no value of the previous place survives and
+     * nothing about the new one is invented while the request is running.
+     */
+    @Test
+    fun `a newly selected location is identified before its weather arrives`() = withViewModel(
+        initialSettings = LocationSettings(
+            homeLocation = hamburg,
+            favorites = listOf(berlin),
+            selectedLocationId = hamburg.id,
+        ),
+    ) {
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.weather.hasData)
+
+        forecastApi.gate = CompletableDeferred()
+        viewModel.selectLocation(berlin.id)
+        runCurrent()
+
+        val pending = viewModel.uiState.value
+        assertEquals(berlin.id, pending.weather.location?.id)
+        assertEquals(berlin.id, pending.settings.resolveSelectedLocation()?.id)
+        assertFalse("no values may be carried over", pending.weather.hasData)
+        assertNull(pending.weather.current)
+        assertNull(pending.weather.failure)
+        assertTrue(pending.weather.isRefreshing)
+        // The star is already correct for the new place: a favorite, not the home location.
+        assertTrue(pending.displayedLocationIsFavorite)
+        assertFalse(pending.displayedLocationIsHome)
+
+        forecastApi.gate?.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.weather.hasData)
+    }
+
+    /**
+     * A failed load keeps the location identified and reports the failure; it neither clears the
+     * selection nor sends the user back to another place.
+     */
+    @Test
+    fun `a failed load keeps the location and reports the failure`() = withViewModel(
+        initialSettings = LocationSettings(
+            homeLocation = hamburg,
+            favorites = listOf(berlin),
+            selectedLocationId = hamburg.id,
+        ),
+    ) {
+        advanceUntilIdle()
+        forecastApi.thrown = UnknownHostException("api.open-meteo.com")
+        viewModel.selectLocation(berlin.id)
+        advanceUntilIdle()
+
+        val failed = viewModel.uiState.value
+        assertEquals(berlin.id, failed.weather.location?.id)
+        assertEquals(berlin.id, failed.settings.resolveSelectedLocation()?.id)
+        assertEquals(DataLoadFailure.NETWORK, failed.weather.failure)
+        assertFalse(failed.weather.hasData)
+        assertFalse(failed.weather.isRefreshing)
+        assertTrue(failed.displayedLocationIsFavorite)
+    }
+
+    @Test
+    fun `today extremes are derived from today hourly values`() = withViewModel {        advanceUntilIdle()
         val weather = viewModel.uiState.value.weather
 
         assertNotNull(weather.todayMin)

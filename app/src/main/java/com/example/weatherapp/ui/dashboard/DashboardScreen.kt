@@ -155,20 +155,23 @@ fun DashboardScreen(
                 ) {
                     val location = weather.location
                     when {
-                        state.isInitialLoading -> LoadingPlaceholder()
-
-                        location == null || !weather.hasData ->
-                            ErrorState(failure = weather.failure, onRetry = onRefresh)
-
-                        else -> WeatherContent(
+                        // A place is known, so its name, region and star stay on the hero card
+                        // while its weather is loading and also when loading failed. The state
+                        // carries exactly one location, so nothing of the previous one is left.
+                        location != null -> WeatherContent(
                             location = location,
                             weather = weather,
                             isFavorite = state.displayedLocationIsFavorite,
                             isHomeLocation = state.displayedLocationIsHome,
+                            onRefresh = onRefresh,
                             onToggleFavorite = onToggleFavorite,
                             onHourClick = { selectedEntry = it },
                             onDayClick = { selectedDay = it },
                         )
+
+                        state.isInitialLoading -> LoadingPlaceholder()
+
+                        else -> ErrorState(failure = weather.failure, onRetry = onRefresh)
                     }
                     Spacer(Modifier.height(8.dp))
                 }
@@ -195,18 +198,32 @@ fun DashboardScreen(
     }
 }
 
+/**
+ * Everything below the toolbar for the selected [location].
+ *
+ * The hero card is rendered in all three situations - values available, values still loading, load
+ * failed - because identifying the place the user picked does not depend on the weather response.
+ * Only the forecast sections need data, and a failed load ends in [ErrorState], which offers the
+ * retry without leaving the screen.
+ */
 @Composable
 private fun WeatherContent(
     location: SavedLocation,
     weather: WeatherUiState,
     isFavorite: Boolean,
     isHomeLocation: Boolean,
+    onRefresh: () -> Unit,
     onToggleFavorite: () -> Unit,
     onHourClick: (HourlyWindowEntry) -> Unit,
     onDayClick: (LocalDate) -> Unit,
 ) {
     val zone = weather.timeZone
     val sections = weather.sections
+    val status = when {
+        weather.hasData -> WeatherCardStatus.READY
+        weather.isRefreshing -> WeatherCardStatus.LOADING
+        else -> WeatherCardStatus.FAILED
+    }
 
     CurrentWeatherCard(
         location = location,
@@ -218,7 +235,17 @@ private fun WeatherContent(
         isFavorite = isFavorite,
         isHomeLocation = isHomeLocation,
         onToggleFavorite = onToggleFavorite,
+        status = status,
     )
+
+    if (!weather.hasData) {
+        // While loading there is nothing to add below the card; a failed load explains itself
+        // right here, next to the retry button.
+        if (!weather.isRefreshing) {
+            ErrorState(failure = weather.failure, onRetry = onRefresh)
+        }
+        return
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),

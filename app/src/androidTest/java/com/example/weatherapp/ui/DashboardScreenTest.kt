@@ -127,6 +127,7 @@ class DashboardScreenTest {
         failure: DataLoadFailure? = null,
         withData: Boolean = true,
         observationInstant: Instant? = fetchedAt,
+        loading: Boolean = false,
     ): MainUiState = MainUiState(
         settingsLoaded = true,
         settings = LocationSettings(
@@ -165,6 +166,7 @@ class DashboardScreenTest {
             timeZone = zone,
             today = today,
             hasLoadedOnce = true,
+            isRefreshing = loading,
             failure = failure,
         ),
     )
@@ -299,6 +301,47 @@ class DashboardScreenTest {
         var refreshed = false
         render(stateWith(failure = DataLoadFailure.NETWORK, withData = false), onRefresh = { refreshed = true })
 
+        composeRule.onNodeWithText(context.getString(R.string.error_network)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.action_retry)).performClick()
+        assertTrue(refreshed)
+    }
+
+    /**
+     * While the weather of the selected place is still on its way, the card already identifies that
+     * place - name and the star that belongs to it - and shows a loading label instead of any value.
+     * Nothing is invented and nothing of a previous place survives.
+     */
+    @Test
+    fun aLoadingLocationIsNamedAndShowsNoInventedValues() {
+        render(stateWith(withData = false, loading = true))
+
+        composeRule.onNodeWithText(hamburg.name).assertIsDisplayed()
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.content_description_star_home))
+            .assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.loading_weather)).assertIsDisplayed()
+
+        // No temperature, no "feels like", no forecast section: there is nothing measured yet.
+        composeRule.onNodeWithText(WeatherFormatter.temperature(6.4)).assertDoesNotExist()
+        composeRule
+            .onNodeWithText(context.getString(R.string.feels_like_value, WeatherFormatter.temperature(3.9)))
+            .assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.section_hourly)).assertDoesNotExist()
+    }
+
+    /** A failed load keeps the place identified and offers the retry below its name. */
+    @Test
+    fun aFailedLoadKeepsTheLocationNamedAndOffersRetry() {
+        var refreshed = false
+        render(
+            stateWith(failure = DataLoadFailure.NETWORK, withData = false),
+            onRefresh = { refreshed = true },
+        )
+
+        composeRule.onNodeWithText(hamburg.name).assertIsDisplayed()
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.content_description_star_home))
+            .assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.error_network)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.action_retry)).performClick()
         assertTrue(refreshed)

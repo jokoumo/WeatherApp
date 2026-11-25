@@ -23,6 +23,27 @@ data class LocationSearchResult(
     val isEmpty: Boolean get() = locations.isEmpty() && failure == null
 }
 
+/** What a favorite toggle actually did, decided inside the serialized mutation. */
+enum class FavoriteToggle {
+    /** The place was not saved and is a favorite now. */
+    ADDED,
+
+    /** The place was a favorite and moved into the history. */
+    REMOVED,
+
+    /** The place is the home location, which the star cannot switch off. */
+    HOME_LOCATION,
+
+    /** Nothing changed: the place is already saved somewhere else or unknown. */
+    UNCHANGED,
+}
+
+/** Result of [LocationRepository.toggleFavorite]: the new state plus what changed. */
+data class FavoriteToggleResult(
+    val settings: LocationSettings,
+    val change: FavoriteToggle,
+)
+
 /**
  * Owns all location related state - the home location, the ordered favorites, the recent
  * locations history and the selected location - and performs location search against the
@@ -35,9 +56,12 @@ data class LocationSearchResult(
  * - the history is sorted by most recent use, holds no duplicates and never grows past
  *   [LocationSettings.MAX_RECENT_LOCATIONS];
  * - the favorites keep the order the user gave them;
+ * - the home designation only ever changes through [setHomeLocation], never through a removal;
  * - identity is decided by [isSamePlaceAs], never by the display name.
  *
  * Mutations are serialised with a mutex so that rapid user actions cannot overwrite each other.
+ * Because the mutex also covers *deciding* which transition applies, [toggleFavorite] cannot act
+ * on a role that another tap has already changed.
  */
 class LocationRepository(
     private val settingsStore: SettingsStore,
@@ -150,24 +174,66 @@ class LocationRepository(
     }
 
     /**
-     * Removes a location from favorites or clears the home location.
+     * Switches [location] between favorite and history.
      *
-     * This is the only way a place leaves the app completely, so it is also dropped from the
-     * history. Un-favouriting on its own goes through [removeFavorite] and keeps the place.
+     * Reading the current role and applying the transition happen inside the same locked
+     * mutation, which is what makes rapid tapping safe: the second tap sees exactly the state the
+     * first tap wrote, so two taps cannot both decide "not a favorite" and both add. The caller
+     * reports [FavoriteToggleResult.change] instead of a conclusion it drew from a UI state that
+     * may already have moved on.
+     *
+     * The home location is never switchable: its star only explains that the place is always
+     * saved, so no tap can silently drop the protected role.
+     */
+    suspend fun toggleFavorite(location: SavedLocation): FavoriteToggleResult {
+        var change = FavoriteToggle.UNCHANGED
+        val settings = mutate { current ->
+            val stored = current.selectableLocations.firstOrNull { it.isSamePlaceAs(location) } ?: location
+            val home = current.homeLocation
+            when {
+                home != null && home.isSamePlaceAs(stored) -> {
+                    change = FavoriteToggle.HOME_LOCATION
+                    current
+                }
+
+                current.favorites.any { it.isSamePlaceAs(stored) } -> {
+                    change = FavoriteToggle.REMOVED
+                    val updated = current.copy(
+                        favorites = current.favorites.filterNot { it.isSamePlaceAs(stored) },
+                        recentLocations = promoteInHistory(current.recentLocations, stored),
+                    )
+                    updated.copy(selectedLocationId = keepValidSelection(current, updated))
+                }
+
+                current.savedLocations.any { it.isSamePlaceAs(stored) } -> current
+
+                else -> {
+                    change = FavoriteToggle.ADDED
+                    current.copy(
+                        favorites = current.favorites + stored,
+                        // A location is favorite or recent, never both.
+                        recentLocations = current.recentLocations.filterNot { it.isSamePlaceAs(stored) },
+                    )
+                }
+            }
+        }
+        return FavoriteToggleResult(settings = settings, change = change)
+    }
+
+    /**
+     * Removes a favorite or a history entry completely.
+     *
+     * The home location is deliberately not removable here. Its designation is only ever handed
+     * on through [setHomeLocation], which keeps the previous home as a regular favorite, so no
+     * ordinary list action can leave the app without a home while other places are still stored.
+     * Un-favouriting on its own goes through [removeFavorite] and keeps the place in the history.
      */
     suspend fun removeLocation(locationId: String): LocationSettings = mutate { current ->
-        val updated = when {
-            current.homeLocation?.id == locationId -> current.copy(
-                homeLocation = null,
-                favorites = current.favorites.filterNot { it.id == locationId },
-                recentLocations = current.recentLocations.filterNot { it.id == locationId },
-            )
-
-            else -> current.copy(
-                favorites = current.favorites.filterNot { it.id == locationId },
-                recentLocations = current.recentLocations.filterNot { it.id == locationId },
-            )
-        }
+        if (current.homeLocation?.id == locationId) return@mutate current
+        val updated = current.copy(
+            favorites = current.favorites.filterNot { it.id == locationId },
+            recentLocations = current.recentLocations.filterNot { it.id == locationId },
+        )
         updated.copy(selectedLocationId = keepValidSelection(current, updated))
     }
 

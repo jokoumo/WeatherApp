@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.weatherapp.R
+import com.example.weatherapp.data.repository.FavoriteToggle
 import com.example.weatherapp.data.repository.SnapshotSource
 import com.example.weatherapp.data.repository.WeatherRepository
 import com.example.weatherapp.data.repository.LocationRepository
@@ -46,6 +47,19 @@ fun UserMessage.messageRes(): Int = when (this) {
     UserMessage.HOME_LOCATION_SET -> R.string.message_home_location_set
     UserMessage.HOME_LOCATION_PROTECTED -> R.string.message_home_location_protected
     UserMessage.HISTORY_CLEARED -> R.string.message_history_cleared
+}
+
+/**
+ * Snackbar text for what a favorite toggle actually did.
+ *
+ * The outcome comes from the repository, so the message describes the transition that really
+ * happened rather than the one the interface expected when the tap arrived.
+ */
+private fun FavoriteToggle.toUserMessage(): UserMessage = when (this) {
+    FavoriteToggle.ADDED -> UserMessage.LOCATION_ADDED
+    FavoriteToggle.REMOVED -> UserMessage.LOCATION_REMOVED_FROM_FAVORITES
+    FavoriteToggle.HOME_LOCATION -> UserMessage.HOME_LOCATION_PROTECTED
+    FavoriteToggle.UNCHANGED -> UserMessage.LOCATION_DUPLICATE
 }
 
 /** Weather state of the location that is currently displayed. */
@@ -111,7 +125,10 @@ data class MainUiState(
 ) {
     /** True while the dashboard has no data at all and is still loading. */
     val isInitialLoading: Boolean
-        get() = settingsLoaded && settings.hasAnyLocation && !weather.hasData && weather.isRefreshing
+        get() = settingsLoaded &&
+            settings.hasSelectableLocation &&
+            !weather.hasData &&
+            weather.isRefreshing
 
     /**
      * Star state of the location shown on the dashboard.
@@ -159,6 +176,12 @@ class MainViewModel(
     private var dayChangeRefreshedOn: LocalDate? = null
 
     init {
+        // Once per app start: cache rows that no stored location refers to any more - left behind
+        // by an earlier version or by a history entry that was evicted - are removed here. Listing
+        // the rows before reading the settings is deliberate, so a location that is added in the
+        // meantime counts as retained and keeps its forecast.
+        viewModelScope.launch { reconcileOrphanedCache() }
+
         viewModelScope.launch {
             locationRepository.settings.collect { settings ->
                 _uiState.update { it.copy(settingsLoaded = true, settings = settings) }
@@ -179,7 +202,9 @@ class MainViewModel(
 
     fun selectLocation(locationId: String) {
         if (locationId == _uiState.value.weather.location?.id) return
-        viewModelScope.launch { locationRepository.selectLocation(locationId) }
+        viewModelScope.launch {
+            applyLocationChange { locationRepository.selectLocation(locationId) }
+        }
     }
 
     /** Manual refresh, for example through pull to refresh or the toolbar button. */
@@ -242,40 +267,31 @@ class MainViewModel(
 
     fun setHomeLocation(location: SavedLocation) {
         viewModelScope.launch {
-            locationRepository.setHomeLocation(location)
+            applyLocationChange { locationRepository.setHomeLocation(location) }
             clearSearch()
             _uiState.update { it.copy(message = UserMessage.HOME_LOCATION_SET) }
         }
     }
 
     /**
-     * Toggles the star of [location].
+     * Switches the star of [location] between saved and remembered.
      *
-     * Adding a favorite takes the place out of the history; removing one puts it there, which is
-     * why the location stays selected and its weather stays on screen. The home location is
-     * deliberately not switchable through the star: tapping it only explains that it is always
-     * saved, so the star never appears to change without any effect.
+     * The view model does not decide what the tap means: the repository reads the current role and
+     * applies the transition inside one serialized mutation, and the reported outcome is what the
+     * snackbar shows. Two rapid taps therefore produce two real state changes instead of both
+     * taps adding the same place, and the home location stays protected no matter how the UI state
+     * happened to look when the tap arrived.
      */
     fun toggleFavorite(location: SavedLocation) {
-        val settings = _uiState.value.settings
-        if (settings.isHomeLocation(location.id)) {
-            _uiState.update { it.copy(message = UserMessage.HOME_LOCATION_PROTECTED) }
-            return
-        }
         viewModelScope.launch {
-            if (settings.isFavorite(location.id)) {
-                locationRepository.removeFavorite(location.id)
-                _uiState.update { it.copy(message = UserMessage.LOCATION_REMOVED_FROM_FAVORITES) }
-            } else {
-                locationRepository.addFavorite(location)
-                _uiState.update { it.copy(message = UserMessage.LOCATION_ADDED) }
-            }
+            val result = applyLocationChange { locationRepository.toggleFavorite(location) }
+            _uiState.update { it.copy(message = result.change.toUserMessage()) }
         }
     }
 
     fun addFavorite(location: SavedLocation) {
         viewModelScope.launch {
-            val added = locationRepository.addFavorite(location)
+            val added = applyLocationChange { locationRepository.addFavorite(location) }
             _uiState.update {
                 it.copy(
                     message = if (added) UserMessage.LOCATION_ADDED else UserMessage.LOCATION_DUPLICATE,
@@ -288,39 +304,43 @@ class MainViewModel(
      * Shows the location of a tapped search suggestion.
      *
      * The repository selects it and remembers it in the history; nothing is added to the favorites,
-     * so browsing a place never saves it.
+     * so browsing a place never saves it. Going through [applyLocationChange] is what lets the
+     * forecast of a history entry that this very selection evicted be dropped again.
      */
     fun selectSearchedLocation(location: SavedLocation) {
         clearSearch()
-        viewModelScope.launch { locationRepository.selectLocation(location) }
+        viewModelScope.launch {
+            applyLocationChange { locationRepository.selectLocation(location) }
+        }
     }
 
     /** Removes one entry from the history. */
     fun removeRecentLocation(locationId: String) {
         viewModelScope.launch {
-            locationRepository.removeRecentLocation(locationId)
-            dropCacheIfNoLongerNeeded(locationId)
+            applyLocationChange { locationRepository.removeRecentLocation(locationId) }
         }
     }
 
     /** Empties the history; favorites, the home location and the appearance stay untouched. */
     fun clearRecentLocations() {
         viewModelScope.launch {
-            val removedIds = _uiState.value.settings.recentLocations.map { it.id }
-            locationRepository.clearRecentLocations()
-            removedIds.forEach { id -> dropCacheIfNoLongerNeeded(id) }
+            applyLocationChange { locationRepository.clearRecentLocations() }
             _uiState.update { it.copy(message = UserMessage.HISTORY_CLEARED) }
         }
     }
 
+    /**
+     * Forgets a favorite or a history entry completely. The repository keeps its hands off the home
+     * location, so this can never empty the app of its protected place.
+     */
     fun removeLocation(locationId: String) {
         viewModelScope.launch {
-            locationRepository.removeLocation(locationId)
-            dropCacheIfNoLongerNeeded(locationId)
+            applyLocationChange { locationRepository.removeLocation(locationId) }
         }
     }
 
     fun moveFavorite(locationId: String, delta: Int) {
+        // Reordering cannot add or remove a location, so no cache reconciliation is needed.
         viewModelScope.launch { locationRepository.moveFavorite(locationId, delta) }
     }
 
@@ -389,7 +409,13 @@ class MainViewModel(
                 }
             }
             val result = weatherRepository.load(location, forceRefresh = forceRefresh)
-            if (!isStillSelected(location)) return@launch
+            if (!isStillSelected(location)) {
+                // The response was already written to the cache when the user moved on. If no role
+                // refers to that place any more, the row is orphaned and goes away again; a place
+                // that is still kept somewhere holds on to its forecast.
+                dropCacheIfNoLongerNeeded(location.id)
+                return@launch
+            }
             _uiState.update {
                 it.copy(
                     weather = render(
@@ -409,6 +435,50 @@ class MainViewModel(
             _uiState.value.settings.resolveSelectedLocation()?.id == location.id
 
     /**
+     * Runs a location mutation and afterwards removes the cached forecasts that stopped being
+     * referenced.
+     *
+     * The repository decides on its own which locations a mutation drops - a history entry that
+     * falls off the list, a place that moves between roles, the entry a search pushed out - so the
+     * view model never has to guess. Comparing the retained ids before and after the mutation finds
+     * every candidate, and [dropOrphanedCache] decides which of them are really gone.
+     */
+    private suspend fun <R> applyLocationChange(mutate: suspend () -> R): R {
+        val before = locationRepository.currentSettings()
+        val result = mutate()
+        dropOrphanedCache(before, locationRepository.currentSettings())
+        return result
+    }
+
+    /**
+     * Deletes the cache rows of locations that stopped being referenced.
+     *
+     * The candidates are re-checked against the newest settings immediately before the delete, so a
+     * location that was added again while this was running keeps its forecast. A lost race can
+     * therefore only ever leave a row in place until the next reconciliation; it can never delete
+     * the data of a location that is still in use. That is the consistency model: cleanup is
+     * best-effort, retention is guaranteed.
+     */
+    private suspend fun dropOrphanedCache(before: LocationSettings, after: LocationSettings) {
+        val candidates = before.retainedLocationIds - after.retainedLocationIds
+        if (candidates.isEmpty()) return
+        val stillRetained = locationRepository.currentSettings().retainedLocationIds
+        weatherRepository.dropCaches(candidates.filterNot { it in stillRetained })
+    }
+
+    /**
+     * Removes cache rows that no stored location references any more. Runs once per app start, on a
+     * table bounded by the number of locations the app can know about, so it is cheap and never part
+     * of a recomposition.
+     */
+    private suspend fun reconcileOrphanedCache() {
+        val cachedIds = weatherRepository.cachedLocationIds()
+        if (cachedIds.isEmpty()) return
+        val retained = locationRepository.currentSettings().retainedLocationIds
+        weatherRepository.dropCaches(cachedIds.filterNot { it in retained })
+    }
+
+    /**
      * Drops the cached forecast of [locationId] only after the settings say that no role refers to
      * it any more.
      *
@@ -418,7 +488,7 @@ class MainViewModel(
      * keeps the dashboard responsive and the app usable offline.
      */
     private suspend fun dropCacheIfNoLongerNeeded(locationId: String) {
-        if (locationRepository.currentSettings().selectableLocations.any { it.id == locationId }) return
+        if (locationRepository.currentSettings().retainedLocationIds.contains(locationId)) return
         weatherRepository.dropCache(locationId)
     }
 

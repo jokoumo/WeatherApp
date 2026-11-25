@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +47,21 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
+ * What the hero card may show. The card belongs to a location, and a location is identified before
+ * its weather has arrived, so the header never waits for a response.
+ */
+enum class WeatherCardStatus {
+    /** Weather values are available and are rendered below the header. */
+    READY,
+
+    /** No values yet and a request is running: a compact indicator instead of any numbers. */
+    LOADING,
+
+    /** No values and the request failed: only the header is shown, the error belongs below. */
+    FAILED,
+}
+
+/**
  * Hero card with the current conditions. The gradient reflects the weather and whether it is
  * day or night at the selected location; white text keeps contrast in both app themes.
  *
@@ -54,6 +70,12 @@ import java.time.ZoneId
  *
  * The favorite star sits in the same line as the location name, so it clearly belongs to the
  * place and not to the weather symbol next to it.
+ *
+ * While [status] is not [WeatherCardStatus.READY] the card keeps the location header - name,
+ * region and star - and leaves out every weather value, because showing a temperature or a symbol
+ * that was never measured would be a fabrication. [WeatherCardStatus.LOADING] replaces the weather
+ * symbol with a small spinner and labels the line; the error message of a failed load is shown
+ * outside the card, where the retry button is.
  */
 @Composable
 fun CurrentWeatherCard(
@@ -67,6 +89,7 @@ fun CurrentWeatherCard(
     isHomeLocation: Boolean,
     onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
+    status: WeatherCardStatus = WeatherCardStatus.READY,
 ) {
     val condition = current?.condition
     val gradient = headerGradient(condition, current?.isDay)
@@ -112,22 +135,52 @@ fun CurrentWeatherCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Text(
-                        text = dataInstant?.let { WeatherFormatter.fullDateTime(it, zoneId) }
-                            ?: stringResource(R.string.observation_time_unknown),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = OnHeaderMuted,
-                    )
+                    when (status) {
+                        WeatherCardStatus.READY -> Text(
+                            text = dataInstant?.let { WeatherFormatter.fullDateTime(it, zoneId) }
+                                ?: stringResource(R.string.observation_time_unknown),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = OnHeaderMuted,
+                        )
+
+                        // No observation time exists yet, so the line says what is happening
+                        // instead of leaving the user without any clue about the spinner.
+                        WeatherCardStatus.LOADING -> Text(
+                            text = stringResource(R.string.loading_weather),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = OnHeaderMuted,
+                        )
+
+                        // The error message and the retry button live below the card.
+                        WeatherCardStatus.FAILED -> Unit
+                    }
                 }
-                Spacer(Modifier.width(12.dp))
-                WeatherIcon(
-                    condition = condition,
-                    precipitation = current?.precipitationStyle ?: PrecipitationStyle.NONE,
-                    windWarning = current?.windWarning ?: WindWarning.NONE,
-                    size = 76.dp,
-                    windIndicatorColors = HeaderWindIndicatorColors,
-                )
+                when (status) {
+                    WeatherCardStatus.READY -> {
+                        Spacer(Modifier.width(12.dp))
+                        WeatherIcon(
+                            condition = condition,
+                            precipitation = current?.precipitationStyle ?: PrecipitationStyle.NONE,
+                            windWarning = current?.windWarning ?: WindWarning.NONE,
+                            size = 76.dp,
+                            windIndicatorColors = HeaderWindIndicatorColors,
+                        )
+                    }
+
+                    WeatherCardStatus.LOADING -> {
+                        Spacer(Modifier.width(12.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.5.dp,
+                            color = OnHeader,
+                        )
+                    }
+
+                    WeatherCardStatus.FAILED -> Unit
+                }
             }
+
+            if (status != WeatherCardStatus.READY) return@Column
 
             Spacer(Modifier.height(14.dp))
 

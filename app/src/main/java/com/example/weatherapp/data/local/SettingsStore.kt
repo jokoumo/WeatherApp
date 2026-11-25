@@ -49,6 +49,15 @@ class DataStoreSettingsStore(
         }
     }
 
+    /**
+     * Reads the stored values and hands them to [LocationSettings.normalized], which is the single
+     * place that decides what an inconsistent file means. Older builds could store a place twice,
+     * and a partially damaged file must still leave the app with every place it can show.
+     *
+     * Normalizing on read and not writing the repaired value back is deliberate: the next real
+     * change persists the corrected state on its own, so no read has to write and no repair can
+     * turn into a write loop.
+     */
     private fun decode(preferences: Preferences): LocationSettings {
         val home = preferences[KEY_HOME]
             ?.takeIf { it.isNotBlank() }
@@ -63,7 +72,7 @@ class DataStoreSettingsStore(
             favorites = favorites,
             recentLocations = recent,
             selectedLocationId = selected,
-        )
+        ).normalized()
     }
 
     private fun encodeLocations(locations: List<SavedLocation>): String =

@@ -220,6 +220,8 @@ class FakeGeocodingApi(
 class FakeForecastCacheStore : ForecastCacheStore {
 
     val entries = mutableMapOf<String, CachedForecast>()
+
+    /** How many individual rows were removed, so a test can count deletions. */
     var deleteCount = 0
 
     override suspend fun find(locationId: String): CachedForecast? = entries[locationId]
@@ -231,6 +233,13 @@ class FakeForecastCacheStore : ForecastCacheStore {
     override suspend fun delete(locationId: String) {
         deleteCount++
         entries.remove(locationId)
+    }
+
+    override suspend fun locationIds(): List<String> = entries.keys.toList()
+
+    override suspend fun deleteAll(locationIds: List<String>) {
+        deleteCount += locationIds.size
+        locationIds.forEach { entries.remove(it) }
     }
 }
 

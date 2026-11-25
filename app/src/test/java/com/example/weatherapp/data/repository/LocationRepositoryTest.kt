@@ -28,7 +28,9 @@ import java.net.UnknownHostException
 /**
  * Location management rules: home location swaps that never drop the previous home, ordered
  * favorites, duplicate prevention, and the selection fallback that keeps a valid location
- * selected after removals while an explicit home change always selects the new home.
+ * selected after removals while an explicit home change always selects the new home. The home
+ * designation survives every ordinary removal, and the favorite toggle decides inside the
+ * serialized mutation so that rapid taps cannot both add the same place.
  *
  * The second half covers the history: selecting a searched place shows it without favouriting it,
  * the history stays duplicate-free and sorted by most recent use, its maximum evicts only the least
@@ -322,29 +324,120 @@ class LocationRepositoryTest {
         assertEquals(tokyo.id, settings.resolveSelectedLocation()?.id)
     }
 
+    // ------------------------------------------------------------- favorite toggle
+
+    /**
+     * The role a tap applies to is decided inside the serialized mutation, so two taps that arrive
+     * back to back produce two real changes instead of both deciding "not a favorite" and both
+     * adding the same place.
+     */
     @Test
-    fun `removing the home location falls back to the first favorite`() = runTest {
+    fun `two rapid favorite taps produce one add and one remove`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = hamburg, selectedLocationId = hamburg.id),
+        )
+
+        val results = coroutineScope {
+            listOf(
+                async { repository.toggleFavorite(berlin) },
+                async { repository.toggleFavorite(berlin) },
+            ).map { it.await() }
+        }
+
+        // Which coroutine won the lock first does not matter; what must never happen is two adds.
+        assertEquals(
+            setOf(FavoriteToggle.ADDED, FavoriteToggle.REMOVED),
+            results.map { it.change }.toSet(),
+        )
+        val stored = repository.currentSettings()
+        assertTrue("the second tap has to undo the first one", stored.favorites.isEmpty())
+        // Un-favouriting does not forget the place: it lands on top of the history.
+        assertEquals(listOf(berlin.id), stored.recentLocations.map { it.id })
+        // Toggling the star never changes which location is displayed.
+        assertEquals(hamburg.id, stored.selectedLocationId)
+    }
+
+    /** The star of the home location cannot switch the protected role off, whatever the UI saw. */
+    @Test
+    fun `the home location cannot be unfavorited`() = runTest {
         val (repository, _) = repositoryWith(
             LocationSettings(homeLocation = hamburg, favorites = listOf(berlin), selectedLocationId = hamburg.id),
         )
 
-        val settings = repository.removeLocation(hamburg.id)
+        val result = repository.toggleFavorite(hamburg)
 
-        assertNull(settings.homeLocation)
-        assertEquals(listOf(berlin.id), settings.favorites.map { it.id })
-        assertEquals(berlin.id, settings.selectedLocationId)
+        assertEquals(FavoriteToggle.HOME_LOCATION, result.change)
+        assertEquals(hamburg, result.settings.homeLocation)
+        assertEquals(listOf(berlin.id), result.settings.favorites.map { it.id })
+        assertFalse(result.settings.recentLocations.any { it.isSamePlaceAs(hamburg) })
     }
 
+    /** A place is favorite or history, never both: adding it clears the history entry. */
     @Test
-    fun `removing the last location leaves nothing selected`() = runTest {
+    fun `favoriting a history entry moves it out of the history`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = hamburg, recentLocations = listOf(berlin, tokyo)),
+        )
+
+        val result = repository.toggleFavorite(berlin)
+
+        assertEquals(FavoriteToggle.ADDED, result.change)
+        assertEquals(listOf(berlin.id), result.settings.favorites.map { it.id })
+        assertEquals(listOf(tokyo.id), result.settings.recentLocations.map { it.id })
+    }
+
+    /** Identity is the place, not the id: the same coordinates under another id still match. */
+    @Test
+    fun `a favorite stored under another id is still recognized by its coordinates`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = hamburg, favorites = listOf(berlin)),
+        )
+
+        val result = repository.toggleFavorite(berlin.copy(id = "search-hit-99"))
+
+        assertEquals(FavoriteToggle.REMOVED, result.change)
+        assertTrue(result.settings.favorites.isEmpty())
+        // The stored copy keeps its identity instead of being replaced by the search hit.
+        assertEquals(listOf(berlin.id), result.settings.recentLocations.map { it.id })
+    }
+
+    /**
+     * The designation of the home location only moves through [LocationRepository.setHomeLocation].
+     * An ordinary "forget this place" action on the home id changes nothing at all, so no list
+     * action can leave the app with favorites and a history but no home.
+     */
+    @Test
+    fun `removing the home location is refused and changes nothing`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = hamburg,
+                favorites = listOf(berlin),
+                recentLocations = listOf(tokyo),
+                selectedLocationId = hamburg.id,
+            ),
+        )
+
+        val settings = repository.removeLocation(hamburg.id)
+
+        assertEquals(hamburg, settings.homeLocation)
+        assertEquals(listOf(berlin.id), settings.favorites.map { it.id })
+        assertEquals(listOf(tokyo.id), settings.recentLocations.map { it.id })
+        assertEquals(hamburg.id, settings.selectedLocationId)
+        assertEquals(hamburg, repository.currentSettings().homeLocation)
+    }
+
+    /** The last remaining location is the home one: it stays, and the app stays usable. */
+    @Test
+    fun `the only home location survives every removal attempt`() = runTest {
         val (repository, _) = repositoryWith(
             LocationSettings(homeLocation = hamburg, favorites = emptyList(), selectedLocationId = hamburg.id),
         )
 
         val settings = repository.removeLocation(hamburg.id)
 
-        assertFalse(settings.hasAnyLocation)
-        assertNull(settings.selectedLocationId)
+        assertTrue("the app never ends up without its only location", settings.hasAnyLocation)
+        assertTrue(settings.hasSelectableLocation)
+        assertEquals(hamburg.id, settings.resolveSelectedLocation()?.id)
     }
 
     @Test

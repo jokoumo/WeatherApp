@@ -125,7 +125,6 @@ class LocationManagerScreenTest {
         val searched = mutableListOf<SavedLocation>()
         val toggled = mutableListOf<SavedLocation>()
         val setHome = mutableListOf<SavedLocation>()
-        val removed = mutableListOf<String>()
         val removedRecents = mutableListOf<String>()
         var backPressed: (() -> Unit)? = null
     }
@@ -179,10 +178,6 @@ class LocationManagerScreenTest {
                             harness.setHome += location
                             favorites = favorites.filterNot { it.id == location.id }
                             recents = recents.filterNot { it.id == location.id }
-                        },
-                        onRemove = { id ->
-                            harness.removed += id
-                            favorites = favorites.filterNot { it.id == id }
                         },
                         onRemoveRecent = { id ->
                             harness.removedRecents += id
@@ -505,7 +500,7 @@ class LocationManagerScreenTest {
     fun firstFavouriteCannotMoveUpButCanMoveDown() {
         renderManager(initialFavorites = listOf(berlin, neustadt))
 
-        openOverflow(1)
+        openOverflow(0)
 
         composeRule.onNodeWithText(string(R.string.action_set_home)).assertIsDisplayed()
         assertTrue(isDisabled(string(R.string.action_move_up)))
@@ -516,7 +511,7 @@ class LocationManagerScreenTest {
     fun lastFavouriteCannotMoveDownButCanMoveUp() {
         renderManager(initialFavorites = listOf(berlin, neustadt))
 
-        openOverflow(2)
+        openOverflow(1)
 
         assertFalse(isDisabled(string(R.string.action_move_up)))
         assertTrue(isDisabled(string(R.string.action_move_down)))
@@ -641,7 +636,7 @@ class LocationManagerScreenTest {
     fun openingTheOverflowMenuDoesNotSelectTheLocation() {
         val harness = renderManager(initialFavorites = listOf(berlin))
 
-        openOverflow(1)
+        openOverflow(0)
 
         assertEquals(0, harness.selected.size)
         assertFalse(harness.dismissed)
@@ -652,7 +647,7 @@ class LocationManagerScreenTest {
     fun makingAFavouriteTheHomeLocationComesFromTheOverflowMenu() {
         val harness = renderManager(initialFavorites = listOf(berlin))
 
-        openOverflow(1)
+        openOverflow(0)
         composeRule.onNodeWithText(string(R.string.action_set_home)).performClick()
         composeRule.waitForIdle()
 
@@ -660,16 +655,25 @@ class LocationManagerScreenTest {
         assertEquals(0, harness.selected.size)
     }
 
-    /** The home location has no star, so its one destructive action lives in the overflow menu. */
+    /**
+     * The home row has no action of its own: no overflow button, so nothing on that row can lift the
+     * protected designation and leave the app with stored places but no home location. The single
+     * action menu of this list belongs to the favorite, and it is the only place where the home
+     * designation moves - which keeps the previous home as a favorite.
+     */
     @Test
-    fun homeRowOverflowOffersRemovingTheHomeLocation() {
+    fun theHomeLocationRowOffersNoActionOfItsOwn() {
         val harness = renderManager()
 
-        openOverflow(0)
-        composeRule.onNodeWithText(string(R.string.action_remove_home_location)).performClick()
-        composeRule.waitForIdle()
+        actionButtons(string(R.string.action_more_actions)).assertCountEquals(1)
+        // The removed action must not come back, not even under its old German label. The label is
+        // written out here on purpose: the string resource it used to have no longer exists.
+        composeRule.onNodeWithText("Hauptstandort aufheben").assertDoesNotExist()
 
-        assertEquals(listOf(hamburg.id), harness.removed)
+        openOverflow(0)
+        composeRule.onNodeWithText(string(R.string.action_set_home)).assertIsDisplayed()
+        composeRule.onNodeWithText("Hauptstandort aufheben").assertDoesNotExist()
+        assertEquals(0, harness.setHome.size)
         assertEquals(0, harness.selected.size)
         assertFalse(harness.dismissed)
     }
@@ -729,7 +733,7 @@ class LocationManagerScreenTest {
         val store = InMemorySettingsStore(initial)
         renderManagerBackedBy(LocationRepository(store, NoSearchGeocodingApi()), initial)
 
-        openOverflow(1)
+        openOverflow(0)
         composeRule.onNodeWithText(string(R.string.action_set_home)).performClick()
         composeRule.waitForIdle()
 
@@ -856,7 +860,6 @@ class LocationManagerScreenTest {
                         }
                     },
                     onSetHome = { location -> scope.launch { repository.setHomeLocation(location) } },
-                    onRemove = { id -> scope.launch { repository.removeLocation(id) } },
                     onRemoveRecent = { id -> scope.launch { repository.removeRecentLocation(id) } },
                     onClearRecent = { scope.launch { repository.clearRecentLocations() } },
                     onMove = { id, delta -> scope.launch { repository.moveFavorite(id, delta) } },

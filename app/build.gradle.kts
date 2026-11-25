@@ -17,8 +17,8 @@ android {
         targetSdk = 37
         // Semantic version: MAJOR.MINOR.PATCH. versionCode only ever increases, so an APK built
         // here always updates an installation that was signed with the same key.
-        versionCode = 3
-        versionName = "1.1.0"
+        versionCode = 4
+        versionName = "1.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

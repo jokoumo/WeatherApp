@@ -127,9 +127,12 @@ class SettingsStoreTest {
         assertEquals(hamburg.id, settings.resolveSelectedLocation()?.id)
     }
 
-    /** A selection pointing at a place that is not stored any more resolves to a real location. */
+    /**
+     * A selection pointing at a place that is not stored any more is repaired while reading, so
+     * every consumer sees a selection that exists instead of having to defend itself against it.
+     */
     @Test
-    fun aSelectionOfAnUnknownPlaceFallsBackToTheHomeLocation() = runBlocking {
+    fun aSelectionOfAnUnknownPlaceIsRepairedToTheHomeLocation() = runBlocking {
         val store = DataStoreSettingsStore(dataStore, json)
         store.save(
             LocationSettings(
@@ -141,8 +144,32 @@ class SettingsStoreTest {
 
         val settings = store.settings.collectFirst()
 
-        assertEquals("somewhere-gone", settings.selectedLocationId)
+        assertEquals(hamburg.id, settings.selectedLocationId)
         assertEquals(hamburg.id, settings.resolveSelectedLocation()?.id)
+    }
+
+    /**
+     * An older build could store the same place in two roles. Reading such a file hands it to the
+     * higher ranked role only and keeps everything else, so the app starts with a consistent state
+     * without losing a single place.
+     */
+    @Test
+    fun aFileStoringAPlaceTwiceIsReadAsOneConsistentState() = runBlocking {
+        dataStore.edit { preferences ->
+            preferences[LEGACY_HOME] = json.encodeToString(SavedLocation.serializer(), hamburg)
+            preferences[LEGACY_FAVORITES] =
+                json.encodeToString(ListSerializer(SavedLocation.serializer()), listOf(berlin, tokyo, hamburg))
+            preferences[LEGACY_RECENT] =
+                json.encodeToString(ListSerializer(SavedLocation.serializer()), listOf(berlin, madrid, dresden))
+            preferences[LEGACY_SELECTED] = berlin.id
+        }
+
+        val settings = DataStoreSettingsStore(dataStore, json).settings.collectFirst()
+
+        assertEquals(hamburg.id, settings.homeLocation?.id)
+        assertEquals(listOf(berlin.id, tokyo.id), settings.favorites.map { it.id })
+        assertEquals(listOf(madrid.id, dresden.id), settings.recentLocations.map { it.id })
+        assertEquals(berlin.id, settings.selectedLocationId)
     }
 
     private companion object {

@@ -124,7 +124,6 @@
     <string name="locations_currently_shown">Wird gerade angezeigt</string>
     <string name="locations_add_hint">Tippe auf einen Ort, um das Wetter anzuzeigen. Gespeichert wird nur, was du mit dem Stern markierst.</string>
     <string name="action_set_home">Als Hauptstandort setzen</string>
-    <string name="action_remove_home_location">Hauptstandort aufheben</string>
     <string name="action_add_favorite">Als Favorit hinzufügen</string>
     <string name="action_remove_favorite">Aus Favoriten entfernen</string>
     <string name="action_remove_recent">Aus dem Verlauf entfernen</string>

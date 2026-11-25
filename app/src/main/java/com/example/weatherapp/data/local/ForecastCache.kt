@@ -35,11 +35,18 @@ interface ForecastCacheDao {
     @Query("SELECT * FROM forecast_cache")
     fun observeAll(): Flow<List<ForecastCacheEntity>>
 
+    /** Only the keys, for the reconciliation pass that looks for rows nobody references any more. */
+    @Query("SELECT location_id FROM forecast_cache")
+    suspend fun locationIds(): List<String>
+
     @Upsert
     suspend fun upsert(entry: ForecastCacheEntity)
 
     @Query("DELETE FROM forecast_cache WHERE location_id = :locationId")
     suspend fun delete(locationId: String)
+
+    @Query("DELETE FROM forecast_cache WHERE location_id IN (:locationIds)")
+    suspend fun deleteAll(locationIds: List<String>)
 
     @Query("DELETE FROM forecast_cache")
     suspend fun clear()
@@ -61,6 +68,12 @@ interface ForecastCacheStore {
     suspend fun find(locationId: String): CachedForecast?
     suspend fun save(locationId: String, fetchedAt: Instant, payloadJson: String)
     suspend fun delete(locationId: String)
+
+    /** Every location id that currently has a cached forecast. */
+    suspend fun locationIds(): List<String>
+
+    /** Removes several locations at once; an empty list deletes nothing. */
+    suspend fun deleteAll(locationIds: List<String>)
 }
 
 class RoomForecastCacheStore(private val dao: ForecastCacheDao) : ForecastCacheStore {
@@ -86,5 +99,14 @@ class RoomForecastCacheStore(private val dao: ForecastCacheDao) : ForecastCacheS
 
     override suspend fun delete(locationId: String) {
         dao.delete(locationId)
+    }
+
+    override suspend fun locationIds(): List<String> = dao.locationIds()
+
+    override suspend fun deleteAll(locationIds: List<String>) {
+        // An empty list would expand to "IN ()", which SQLite rejects, and deleting nothing is
+        // exactly what an empty list asks for.
+        if (locationIds.isEmpty()) return
+        dao.deleteAll(locationIds)
     }
 }

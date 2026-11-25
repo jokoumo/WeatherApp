@@ -92,6 +92,10 @@ import com.example.weatherapp.ui.weather.messageRes
  * favourite, and the star of a history entry offers to make it one. Tapping a row - of a
  * suggestion, a favourite or a history entry - selects that location and leaves the screen; every
  * other control in a row performs only its own action.
+ *
+ * The home location row carries no actions at all. The designation only moves through "Als
+ * Hauptstandort setzen" in another row, which hands the previous home over to the favourites
+ * instead of leaving the app with stored places but no protected location.
  */
 @Composable
 fun LocationManagerScreen(
@@ -102,7 +106,6 @@ fun LocationManagerScreen(
     onSelectSearched: (SavedLocation) -> Unit,
     onToggleFavorite: (SavedLocation) -> Unit,
     onSetHome: (SavedLocation) -> Unit,
-    onRemove: (String) -> Unit,
     onRemoveRecent: (String) -> Unit,
     onClearRecent: () -> Unit,
     onMove: (String, Int) -> Unit,
@@ -185,7 +188,6 @@ fun LocationManagerScreen(
                     },
                     onToggleFavorite = onToggleFavorite,
                     onSetHome = onSetHome,
-                    onRemove = onRemove,
                     onRemoveRecent = onRemoveRecent,
                     onClearRecent = { confirmClearHistory = true },
                     onMove = onMove,
@@ -259,7 +261,6 @@ private fun SavedLocationsList(
     onSelect: (String) -> Unit,
     onToggleFavorite: (SavedLocation) -> Unit,
     onSetHome: (SavedLocation) -> Unit,
-    onRemove: (String) -> Unit,
     onRemoveRecent: (String) -> Unit,
     onClearRecent: () -> Unit,
     onMove: (String, Int) -> Unit,
@@ -283,7 +284,6 @@ private fun SavedLocationsList(
                     location = home,
                     isSelected = home.id == selectedId,
                     onSelect = { onSelect(home.id) },
-                    onRemove = { onRemove(home.id) },
                 )
             }
         }
@@ -381,15 +381,18 @@ private fun SectionLabel(text: String) {
 }
 
 /**
- * The home location: recognisable by the house in front of its name, never by a star. It cannot be
- * un-saved by accident, which is why the only action it offers sits in the overflow menu.
+ * The home location: recognisable by the house in front of its name, never by a star.
+ *
+ * The row deliberately has no actions at all. Removing the home designation would leave the app
+ * with stored places but no protected location, and there is no confirmation small enough to make
+ * that safe by accident. The designation only moves through "Als Hauptstandort setzen" in another
+ * row, which keeps the previous home as a regular favourite.
  */
 @Composable
 private fun HomeLocationRow(
     location: SavedLocation,
     isSelected: Boolean,
     onSelect: () -> Unit,
-    onRemove: () -> Unit,
 ) {
     LocationListItem(
         location = location,
@@ -402,19 +405,6 @@ private fun HomeLocationRow(
                 contentDescription = stringResource(R.string.content_description_home_location),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(end = 10.dp),
-            )
-        },
-        trailingReserve = OVERFLOW_ACTIONS_WIDTH,
-        trailing = {
-            OverflowMenu(
-                actions = listOf(
-                    RowAction(
-                        label = stringResource(R.string.action_remove_home_location),
-                        icon = Icons.Default.Home,
-                        destructive = true,
-                        onClick = onRemove,
-                    ),
-                ),
             )
         },
     )
@@ -708,7 +698,6 @@ private val LIST_BOTTOM_SPACE = 24.dp
  * Widths the row layout reserves for the action buttons, so that a long location name is moved
  * above the actions instead of being squeezed into a few characters.
  */
-private val OVERFLOW_ACTIONS_WIDTH = 48.dp
 private val FAVORITE_ACTIONS_WIDTH = 48.dp * 2 + 8.dp
 private val HISTORY_ACTIONS_WIDTH = 48.dp * 3 + 8.dp
 private val SUGGESTION_GAP = 8.dp
