@@ -30,6 +30,7 @@ import com.example.weatherapp.domain.model.WeatherSnapshot
 import com.example.weatherapp.ui.components.SecondaryScreenHeader
 import com.example.weatherapp.ui.dashboard.DashboardScreen
 import com.example.weatherapp.ui.theme.WeatherAppTheme
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -173,6 +174,7 @@ class DashboardScreenTest {
         onRefresh: () -> Unit = {},
         onOpenLocations: () -> Unit = {},
         onOpenSettings: () -> Unit = {},
+        onToggleFavorite: () -> Unit = {},
     ) {
         composeRule.setContent {
             WeatherAppTheme {
@@ -181,6 +183,7 @@ class DashboardScreenTest {
                     onRefresh = onRefresh,
                     onOpenLocations = onOpenLocations,
                     onOpenSettings = onOpenSettings,
+                    onToggleFavorite = onToggleFavorite,
                     onMessageShown = {},
                 )
             }
@@ -202,6 +205,57 @@ class DashboardScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.tomorrow)).assertExists()
         composeRule.onNodeWithText(context.getString(R.string.section_extended)).assertExists()
         composeRule.onNodeWithText(context.getString(R.string.extended_hint)).assertExists()
+    }
+
+    /**
+     * The star of the hero card always speaks for the place that is on screen: here the home
+     * location, which is saved by definition and says so instead of offering to be removed.
+     */
+    @Test
+    fun dashboardStarMarksTheHomeLocationAndReportsTaps() {
+        var taps = 0
+        render(stateWith(), onToggleFavorite = { taps++ })
+
+        val label = context.getString(R.string.content_description_star_home)
+        composeRule.onNodeWithContentDescription(label).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(label).performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(1, taps)
+    }
+
+    /** A displayed favourite offers removing it. */
+    @Test
+    fun dashboardStarOffersRemovingADisplayedFavourite() {
+        val asFavourite = stateWith().copy(
+            settings = LocationSettings(
+                homeLocation = berlin,
+                favorites = listOf(hamburg),
+                selectedLocationId = hamburg.id,
+            ),
+        )
+
+        render(asFavourite)
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_remove_favorite))
+            .assertIsDisplayed()
+    }
+
+    /** A place that was only looked at offers being saved, and nothing more. */
+    @Test
+    fun dashboardStarOffersSavingAPlaceThatWasOnlyViewed() {
+        val asHistoryEntry = stateWith().copy(
+            settings = LocationSettings(
+                homeLocation = berlin,
+                recentLocations = listOf(hamburg),
+                selectedLocationId = hamburg.id,
+            ),
+        )
+
+        render(asHistoryEntry)
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_add_favorite))
+            .assertIsDisplayed()
     }
 
     @Test
@@ -355,6 +409,7 @@ class DashboardScreenTest {
                         onRefresh = {},
                         onOpenLocations = {},
                         onOpenSettings = {},
+                        onToggleFavorite = {},
                         onMessageShown = {},
                     )
                     // The shared header of every secondary screen, measured with the same
@@ -413,6 +468,7 @@ class DashboardScreenTest {
                         onRefresh = {},
                         onOpenLocations = {},
                         onOpenSettings = {},
+                        onToggleFavorite = {},
                         onMessageShown = {},
                     )
                 }

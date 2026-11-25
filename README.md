@@ -1,9 +1,9 @@
 # WetterPlus
 
 Native Android weather application written in Kotlin and Jetpack Compose. It shows live
-weather data from [Open-Meteo](https://open-meteo.com/) for a configurable home location and
-any number of favourite locations, caches responses locally, and works offline as long as a
-cached forecast exists.
+weather data from [Open-Meteo](https://open-meteo.com/) for a configurable home location, any
+number of favourite locations and any place that was just looked at, caches responses locally,
+and works offline as long as a cached forecast exists.
 
 The application is named **WetterPlus** everywhere the user sees it — launcher label, system
 application info and the dashboard toolbar — while the application ID and package name stay
@@ -15,11 +15,11 @@ All user-visible text is German; source code, comments and this documentation ar
 
 | Area | Behaviour |
 | --- | --- |
-| Current weather | Temperature, condition, feels-like, today's min/max, humidity, precipitation, cloud cover, wind speed/direction/gusts, pressure. Sustained wind and gusts are checked against the wind warning thresholds and, when exceeded, marked on the weather symbol (see "Wind and gust indicators"). |
+| Current weather | Temperature, condition, feels-like, today's min/max, humidity, precipitation, cloud cover, wind speed/direction/gusts, pressure. Sustained wind and gusts are checked against the wind warning thresholds and, when exceeded, marked on the weather symbol (see "Wind and gust indicators"). Next to the location name sits the **favorite star** of the place that is on screen: outlined and neutral while it is not saved, filled in warm gold once it is a favourite, and always filled for the home location, which is saved by definition. Tapping it saves the place or takes it out of the favourites again. |
 | Hourly (rolling) | Horizontal strip with a rolling 24-hour window: it starts at the hourly interval that **contains** the current time, highlights it, labels every day the window touches ("Heute", "Morgen", weekday) and moves on its own when the hour changes. If that current hour is missing from the response, the earliest later hour starts the window; an already elapsed hour is never used as the start, and if the payload only contains elapsed hours the strip shows the unavailable-data note instead of outdated values. The window covers the current interval plus the following 23 hourly intervals by absolute timestamp, so a gap shortens the list rather than stretching the horizon. Every chip has the same outer height and the same internal layout whether or not it carries a day label, and the precipitation probability is rendered in the same size as the clock time so that "100 %" is never cut off. Tapping an hour opens a "Stundendetails" bottom sheet with all values for that hour, including a plain-text wind warning when that hour exceeds a threshold. |
 | Days 1–2 | Two detailed cards ("Morgen", "Übermorgen") with condition, precipitation probability/amount, wind, gusts, sunshine and day length. Both cards are tappable ("Details" with a chevron): they open a **Tagesverlauf** bottom sheet with the day split into Vormittag, Nachmittag, Abend and Nacht, aggregated from the hourly data of that day (see [Day periods](#day-periods-vormittag-nachmittag-abend-nacht)). |
 | Days 3–15 | Compact list ("Ausblick") with weekday, date, condition icon, precipitation probability/amount and the min/max temperatures as numbers; up to the 16-day forecast horizon of the API. The written condition label and the temperature range bar were removed from these rows: the icon, the numbers and the wind marker carry the same information in less space, and the full wording stays in the detailed cards and in the accessibility label of the icon. |
-| Locations | A home location plus favourites, managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the saved locations live in a list that scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. The screen is entered and left through the **back arrow in its header** ("← Orte verwalten"), like every other secondary screen; the system back button first closes the suggestions. Search by name (Open-Meteo geocoding), add as favourite, remove, reorder with up/down arrows, promote a favourite to home, and tap any entry to display it. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. Home is a single slot: promoting a favourite to home swaps the two entries, the previous home moving into the favourites at exactly the position the new home had, and the new home becomes the displayed location; no saved place is ever dropped and none appears twice. The last displayed location is restored on the next start. |
+| Locations | Three roles, three sections, always in this order: **Hauptstandort** (house icon), **Favoriten** (filled star) and **Verlauf** (outlined star) — the places that were only looked at. Managed on a dedicated full screen instead of a bottom sheet: the title and the search field stay fixed at the top, the location list scrolls on its own, and search results appear in a floating dropdown directly under the search field, overlaying the list without moving it. The screen is entered and left through the **back arrow in its header** ("← Orte verwalten"), like every other secondary screen; the system back button first closes the suggestions. **Looking at a place never saves it**: tapping a row — a suggestion, a favourite or a history entry — shows that location on the dashboard right away and leaves the screen. Saving is an explicit decision made with a star, either on the current weather card or on a history row. Un-saving a favourite moves the place into the history instead of forgetting it, and saving a history entry takes it out of the history, so a place is never in both lists at the same time. The history is sorted most recent first, holds at most `LocationSettings.MAX_RECENT_LOCATIONS` (30) entries without duplicates and drops only its least recently used entry when it is full; a single entry can be removed, and **Alle löschen** clears the whole section behind a confirmation dialog. Favourites and the home location are never affected by it. Home is a single protected slot: promoting a favourite or a history entry to home swaps the two entries, the previous home moving into the favourites at exactly the position the new home had, and the new home becomes the displayed location; no saved place is ever dropped and none appears twice. Its star is always filled and only states that this place is always saved. Reordering stays limited to favourites. Duplicate places are rejected (same id or same rounded coordinates) and reported without leaving the screen. The last displayed location is restored on the next start. |
 | Refresh | Pull-to-refresh, toolbar refresh button (both bypass the cache), automatic refresh when the app returns to the foreground, and a silent background refresh when the cached response belongs to a previous calendar day in the location's time zone. The hourly window itself advances every hour without any network request. |
 | Offline | The last response per location is cached; with no network the cached data is shown instead of an empty screen. |
 | Appearance | Material 3, rounded cards, condition-dependent gradient header, custom vector weather icons, German date/number formatting, 24-hour time. The theme is a user choice on its own screen: **Systemeinstellung / Hell / Dunkel**, applied immediately, stored, and restored on the next start (see [Appearance and theme](#appearance-and-theme)). |
@@ -358,6 +358,18 @@ Key decisions:
   is reported alongside it, and usable cache rows are never deleted. HTTP/IO/serialisation
   errors map to a small `DataLoadFailure` set with German messages; corrupted cache rows are
   discarded.
+- **Three location roles, one list.** `LocationSettings` holds `homeLocation` (one nullable
+  slot), `favorites` (in the user's order) and `recentLocations` — the "Verlauf" of places that
+  were only looked at, newest first and capped at `LocationSettings.MAX_RECENT_LOCATIONS` (30).
+  `savedLocations` is home plus favourites, i.e. what is really stored; `selectableLocations`
+  adds the history, and that is the set the dashboard is allowed to display. A place is
+  identified by `SavedLocation.isSamePlaceAs(other)` — its id or its rounded coordinate key — so
+  the same city reached through a different search hit never appears twice. `LocationRepository`
+  serialises every mutation through one `Mutex` and returns the resulting settings, which is what
+  keeps the three lists consistent: favouriting takes a place out of the history, un-favouriting
+  puts it at the top of the history, promoting to home moves the previous home into the favourite
+  slot the new home vacated, and every mutation ends in `keepValidSelection`, which falls back to
+  another place only when the selected one has disappeared from *all three* lists.
 - **Concurrency.** One load job per selection in the ViewModel, cancelled and restarted on
   location changes; a `isStillSelected()` guard prevents a late response from overwriting a
   newer selection. Request and persistence work runs on `Dispatchers.IO`.
@@ -399,7 +411,15 @@ Dashboard (toolbar: WetterPlus · Aktualisieren · Orte · Einstellungen)
   `hideFromAccessibility()` and its root swallows taps, so the hidden layer can neither be
   reached by TalkBack nor receive a touch that belongs to the screen on top.
 - The location manager keeps its own inner back order: the first back press closes the search
-  suggestions, the second leaves the screen.
+  suggestions, the second leaves the screen. While the "Verlauf löschen?" confirmation dialog is
+  open, a back press closes the dialog and nothing else.
+- Inside the location list a **row tap is the only thing that selects a place** and returns to the
+  dashboard. Every other control — the star, the delete icon, the three-dot button — acts on its
+  own row and stays on the screen. The less frequent actions ("Als Hauptstandort setzen",
+  "Nach oben", "Nach unten", "Hauptstandort aufheben") live in a compact Material 3
+  `DropdownMenu` behind the three-dot button, so a row on a narrow phone carries at most three
+  icons; the width those icons need is declared to the row layout, which moves them onto their own
+  line instead of squeezing a long place name into a few characters.
 - The toolbar title is the application name, not the location; the location stays visible in
   the current-weather card, which is the only place it is needed. It is set in `headlineSmall`
   (24 sp), one step above the `titleLarge` (21 sp) every secondary header uses, so the name of
@@ -434,11 +454,20 @@ decodes to `SYSTEM` rather than failing.
 
 ## Versioning
 
-`app/build.gradle.kts` carries the version: `versionName = "1.0.0"` in `MAJOR.MINOR.PATCH` form
-and a positive `versionCode` that only ever increases (currently 2, because the first published
+`app/build.gradle.kts` carries the version: `versionName = "1.1.0"` in `MAJOR.MINOR.PATCH` form
+and a positive `versionCode` that only ever increases (currently 3, because the first published
 build of this repository was 1). The About screen does not repeat those numbers: it reads
 `PackageInfo.versionName` and `longVersionCode` from the installed package, so the displayed
 values cannot drift away from the build that is actually running.
+
+The rule for the next change is written into `AGENTS.md`: MAJOR for incompatible behaviour or a
+stored format older builds cannot read, MINOR for added user-facing functionality that stays
+compatible, PATCH for fixes, and `versionCode` increases by one per published build.
+
+| Version | versionCode | What changed |
+| --- | --- | --- |
+| 1.0.0 | 2 | First published build: home location plus ordered favourites, rolling hourly window, day periods, cached offline forecasts, appearance and privacy screens. |
+| 1.1.0 | 3 | Location selection reworked: a tapped search suggestion now opens the dashboard immediately without saving anything, the current-weather card carries a favorite star, and a persistent "Verlauf" of viewed places was added next to the protected home location and the favourites. |
 
 ## Privacy, local storage and backup
 
@@ -455,7 +484,7 @@ which links to the official Open-Meteo terms and privacy page
 
 | Path inside the app data directory | Content | Written by |
 | --- | --- | --- |
-| `files/datastore/weather-settings.preferences_pb` | home location, favourites with their order, selected location, appearance (`theme_mode`) | `SettingsStore`, `ThemeStore` (one DataStore file) |
+| `files/datastore/weather-settings.preferences_pb` | home location, favourites with their order, the history of viewed places (`recent_locations`), selected location, appearance (`theme_mode`) | `SettingsStore`, `ThemeStore` (one DataStore file) |
 | `databases/weather-cache`, `weather-cache-wal`, `weather-cache-shm` | one cached forecast per location plus the time it was fetched | Room (`ForecastCache`) |
 | `cache/`, `code_cache/` | SQLite lock file, JIT caches, temporary files | the system, not the app |
 
@@ -467,19 +496,22 @@ request carries the coordinates of the selected place and the requested variable
 the entered text. As with any HTTP request, the server also sees the device's public IP address.
 OkHttp is configured with timeouts only — no interceptors, no logging.
 
-**Retention.** The cache holds one row per saved location and is replaced on the next refresh; a
-corrupt row is deleted when it is noticed, and deleting a location also drops its cached forecast
-(`MainViewModel.removeLocation` → `WeatherRepository.dropCache`). Stale entries are deliberately
-kept while a refresh runs and as the fallback when a refresh fails, which is what makes the app
-usable offline.
+**Retention.** The cache holds one row per location and is replaced on the next refresh; a
+corrupt row is deleted when it is noticed. A cached forecast is dropped only when **no role refers
+to that place any more** — not when it merely stops being a favourite, because a place that moves
+into the history can still be on screen (`MainViewModel.dropCacheIfNoLongerNeeded` covers
+"remove location", "remove from history" and "clear history"). Stale entries are deliberately kept
+while a refresh runs and as the fallback when a refresh fails, which is what makes the app usable
+offline. The history itself is bounded: at most 30 entries, oldest evicted first, so the
+preferences file cannot grow without limit.
 
 **Backup policy** (`res/xml/backup_rules.xml` for Android 11 and lower,
 `res/xml/data_extraction_rules.xml` for Android 12 and newer, both referenced from the manifest):
 
-- Kept: everything the user created — home location, favourites and their order, the selected
-  location and the appearance choice. They are covered by the default "back up the app data
-  directory" rule, so no `<include>` is used anywhere; adding one would restrict the backup to the
-  listed paths and could silently drop saved places.
+- Kept: everything the user created — home location, favourites and their order, the history of
+  viewed places, the selected location and the appearance choice. They are covered by the default
+  "back up the app data directory" rule, so no `<include>` is used anywhere; adding one would
+  restrict the backup to the listed paths and could silently drop saved places.
 - Excluded: the forecast cache, i.e. `domain="database" path="weather-cache"` plus its `-wal` and
   `-shm` side files (the platform adds `-journal` on its own), and the debug-only
   `files/icon_gallery` folder. All of it can be fetched again.
@@ -509,9 +541,9 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 ```powershell
 .\gradlew.bat assembleDebug          # debug APK
-.\gradlew.bat testDebugUnitTest      # unit tests (274)
+.\gradlew.bat testDebugUnitTest      # unit tests (313)
 .\gradlew.bat lintDebug              # Android lint
-.\gradlew.bat connectedDebugAndroidTest   # 106 instrumented + Compose UI tests on a running device
+.\gradlew.bat connectedDebugAndroidTest   # 136 instrumented + Compose UI tests on a running device
 .\gradlew.bat installDebug           # install on the connected device/emulator
 ```
 
@@ -543,20 +575,48 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   arrays, missing values, error payloads and corrupt cache JSON; `WeatherRepository`
   cache-first behaviour, day-boundary invalidation, force refresh, failure classification,
   partial payloads; `LocationRepository` home/favourite rules, de-duplication, reordering,
-  selection fallbacks, search debouncing/short queries and **home switching**
-  (`LocationRepositoryTest`, 23 tests: the previous home takes the favourite slot the new home
+  selection fallbacks, search debouncing/short queries, **home switching** and the **history**
+  (`LocationRepositoryTest`, 41 tests: the previous home takes the favourite slot the new home
   leaves, the New York City/Hamburg/Dresden/Paris/Madrid sequence keeps all five places, repeated
   home changes, six concurrent taps, duplicates already present in stored state, a single
   favourite, a missing home entry, the new home becoming the selected location, the selection
-  surviving a restart, and no write at all when the current home is assigned again);
+  surviving a restart, and no write at all when the current home is assigned again. For the
+  history: selecting a searched place shows it without favouriting it, the same place twice stays
+  one entry, a search hit that matches a saved place by coordinates reuses the saved entry,
+  selecting a favourite or the home location leaves the history empty, the list stays sorted by
+  most recent use, selecting an entry again moves it to the top, the 30-entry cap evicts only the
+  least recently used place, the cap never evicts a favourite or the home location, favouriting
+  takes a place out of the history, un-favouriting puts it at the top of the history, the home
+  location can never be moved into the history through the favourite toggle, deleting one entry
+  leaves the rest and the selection alone, clearing keeps favourites, home and selection,
+  clearing or deleting the *displayed* entry falls back to the home location, a history entry
+  survives a restart, a history entry can become the home location without duplicating anything,
+  and an unknown id changes nothing);
+  **the location model itself** (`LocationSettingsTest`, 8 tests: an empty settings object,
+  `savedLocations` being home plus favourites in their order while `selectableLocations` also
+  holds the history, the three role queries answering for one role only, a valid selection
+  beating every fallback, the fallback chain home → favourites → history, history alone not
+  counting as a saved place, the capacity being one central constant, and identity being the
+  stored id rather than the display name);
   **row action colours** (`LocationRowActionColorsTest`, 5 tests: the enabled move, promote and
   remove tints reach at least 3:1 contrast against the shipped light and dark backgrounds, the
   disabled tint is clearly weaker yet still visible, and the three emphasis levels are
   `onSurfaceVariant`, `primary` and `error`); `MainViewModel` state transitions
-  (initial load, location switch, late responses, hourly tick without extra request, silent
-  refresh after a local day change, foreground refresh, cached-while-refreshing, error states, and
-removing a location while **also dropping the cached forecast of that location** so a deleted place
-leaves no row behind);
+  (`MainViewModelTest`, 33 tests: initial load, location switch, late responses, hourly tick
+  without extra request, silent refresh after a local day change, foreground refresh,
+  cached-while-refreshing, error states, and removing a location while **also dropping the cached
+  forecast of that location** so a deleted place leaves no row behind). For the new flow: a tapped
+  suggestion is displayed at once without becoming a favourite and clears the search, the star on
+  the card reports the role of the displayed place, the same suggestion twice stays one history
+  entry, selecting a favourite or the home location leaves the history empty, the star moves a
+  place between history and favourites while it stays on screen, **changing the favourite state
+  never triggers another request**, the home location stays saved when its star is tapped,
+  un-favouriting the displayed place keeps its forecast in the cache, deleting the displayed
+  history entry falls back to the home location and drops only that now unreachable forecast,
+  clearing the history keeps favourites, the home location and their cached forecasts, browsing the
+  list of saved and recently viewed places causes no extra request either, and two selections while
+  the first response is still on its way end with the values of the last one — never a mixture of
+  two places);
   **precipitation intensity** (`PrecipitationStyleTest`, 12 tests: the WMO codes behind the three
   rain and three snow levels, showers sharing those levels with steady rain, drizzle, freezing
   precipitation, snow grains, thunderstorm and hail keeping their own family and no intensity,
@@ -635,21 +695,27 @@ leaves no row behind);
   observation time" label, the error state with its retry action, cached data being presented
   under the "Zuletzt aktualisiert" line **without** any status strip below it, and the toolbar
   opening the **full screen location manager**
-  (`LocationManagerScreenTest`, 13 tests): the manager shows its own title, the fixed search
-  field and the saved places; the field and title stay in place while a 25 favourite list is
-  scrolled and the home entry scrolls out with the list only; the last favourite can be
-  scrolled clear of the floating back button and the button keeps at least a 48 dp touch
-  target (bounds compared, no fixed pixel values); suggestions overlay the favourites without
-  moving them; choosing a suggestion adds the favourite, clears the query and closes the
-  dropdown while staying on the location screen; the same place cannot be added twice;
-  duplicate feedback is shown on the manager itself; back closes the suggestions first and the
-  screen only afterwards; the floating button returns to the dashboard; an empty favourite
-  list still keeps the search field usable; the first "up" and last "down" arrows report
-  `Disabled` through semantics while the middle rows do not; a long place name never overlaps an
-  action button and no button is cut off at the screen edge; and driving a **real
-  `LocationRepository`** (with an in-memory `SettingsStore`) through the UI promotes a favourite
-  to home, puts the previous home back into the favourites at the slot the new home left, keeps
-  every place on screen exactly once and stores the new home as the selected location.
+  (`LocationManagerScreenTest`, 34 tests): the manager shows its own title, the fixed search
+  field and the saved places; the three sections **Hauptstandort / Favoriten / Verlauf** are
+  separate and always in that order (their measured tops are compared), the home entry is marked
+  by a house and carries no star, an empty history says so and offers no "Alle löschen" action,
+  and history entries are listed newest first; the field and title stay in place while a long
+  list is scrolled and the home entry scrolls out with the list only; the last entry can be
+  scrolled near the bottom edge without any overlay and every row action keeps at least a 48 dp
+  touch target (bounds compared, no fixed pixel values); suggestions overlay the list without
+  moving it, carry **no save button at all**, and tapping one hands the place to the dashboard and
+  leaves the screen; tapping a favourite row or a history row does the same, while the star, the
+  delete icon and the overflow button of a row act on that row only and never navigate; the star
+  of a history entry saves it, deleting one entry leaves the others on screen, and "Alle löschen"
+  first shows the confirmation dialog — cancelling keeps everything, confirming clears, and a back
+  press closes the dialog without leaving the screen; the first "up" and the last "down" menu
+  entry report `Disabled` through semantics while the opposite end does not; a long place name
+  never overlaps an action button and no button is cut off at the screen edge; and driving a
+  **real `LocationRepository`** (with an in-memory `SettingsStore`) through the UI promotes a
+  favourite to home, puts the previous home back into the favourites at the slot the new home left,
+  keeps every place on screen exactly once and stores the new home as the selected location, saves
+  a history entry into the favourites without listing it twice, and deletes one history entry while
+  favourites, home location and selection stay untouched.
 - **Navigation through the real root composable** (`WeatherRootNavigationTest`, 17 tests): the
   dashboard toolbar carries the application name; settings, location management, appearance, about,
   a licence detail and the **privacy page** each open as their own screen and return to the right
@@ -663,7 +729,7 @@ leaves no row behind);
   and opening settings, appearance, the location manager or the privacy page and coming back sends
   **no** forecast request, writes the location settings **no** extra time, and keeps the selected
   location and the favourites untouched.
-- **Daily detail sheet on the dashboard** (`DashboardScreenTest`, 19 tests, and
+- **Daily detail sheet on the dashboard** (`DashboardScreenTest`, 22 tests, and
   `DayForecastSheetNavigationTest`, 3 tests): the toolbar title is measured **at least as tall** as
   the title of a secondary screen header in the same composition, stays clear of the three action
   buttons (bounds compared) and remains usable with a doubled font scale; both detailed day cards
@@ -675,6 +741,13 @@ leaves no row behind);
   one; and driving the **real `MainViewModel`** with a counting fake API, both cards open their sheet
   with four populated periods **without a single additional forecast request** (the call counter is
   compared before and after opening, scrolling and closing).
+- **The favorite star of the hero card** (`WeatherPresentationUiTest`, 14 tests, plus three star
+  tests in `DashboardScreenTest`): the star says what the displayed place is — "Als Favorit
+  hinzufügen" while it is not saved, "Aus Favoriten entfernen" once it is, and the home location's
+  own label instead of an offer to remove it; it is a button of its own (a tap reaches the
+  callback), it shares the line of the location name rather than the weather symbol next to it, and
+  its touch target is at least 48 dp; on the dashboard the star follows the role of the displayed
+  location, so a favourite offers removing and a merely viewed place offers saving.
 - **Privacy page** (`PrivacyScreenTest`, 9 tests): the header shows the German title and the back
   action, all seven topics have their own heading, the back arrow leaves the page, the link at the
   end of a long scrolling page is reachable by scrolling, the whole notice is present without any
@@ -708,10 +781,18 @@ leaves no row behind);
   fresh file, the chosen mode written to the preferences and read back by a store created
   afterwards, every mode stored as itself, a hand-written invalid value falling back to `SYSTEM`,
   and a theme write leaving the saved locations in the same file identical.
+- **Location settings against a real DataStore file** (`SettingsStoreTest`, 5 tests): a fresh file
+  holds no locations and no history; home, favourites, history and the selection survive a store
+  created afterwards, with both orders intact; **a preferences file written by an older build that
+  never had a `recent_locations` key still loads completely** — the home location, the favourites
+  in their order and a valid selection are kept and the history simply reads as empty; a damaged
+  list value becomes empty without taking the rest of the file down with it; and a selection
+  pointing at a place that is not stored any more resolves back to the home location.
 - **Toolbar and header touch targets**: the three dashboard actions and the header back arrow are
   measured in the semantics tree and must be at least 48 dp on both axes, aligned on one row and
   without overlapping.
-- **Presentation layout and icon family tests** (`WeatherPresentationUiTest`, 12 tests):
+- **Presentation layout and icon family tests** (`WeatherPresentationUiTest`, 14 tests, two of
+  which are the favorite star described above):
   every detail label of the hero card is displayed and stays inside the card bounds, and the
   first detail column never reaches into the second one; three hourly chips that cross midnight
   (so one carries "Heute", one no label and one "Morgen") have **identical heights, identical top
@@ -1103,6 +1184,69 @@ and parsed by the platform, but no actual phone-to-phone transfer was performed;
 Open-Meteo logs anything beyond what its own terms and privacy page states, which is outside this
 application.
 
+### Location roles, the favorite star and the history (current iteration)
+
+Verified on the `Medium_Phone_API_37.0` emulator (1080 × 2400) with the debug APK installed over the
+existing installation through `installDebug` — no app data was cleared. Every step was screenshotted
+and inspected (`app/build/verification/01…17.png`), and the UI hierarchy was dumped with
+`uiautomator` to read the exact labels and the bounds of each control.
+
+- **Setup and live data**: the setup screen offers the search field, typing "Hamburg" brings up the
+  live geocoding suggestions, and choosing "Hamburg / Freie und Hansestadt Hamburg, Deutschland"
+  loads a real forecast (0 °C, Weitgehend klar, Min 0 / Max 2 °C). The star on the card is **filled
+  in warm gold**, because that place is the home location.
+- **Three sections, in the required order**: the manager shows **Hauptstandort** (house symbol,
+  "Wird gerade angezeigt", and only a three-dot menu — no star), **Favoriten** with "Noch keine
+  Favoriten. Tippe den Stern an, um einen Ort zu speichern.", and **Verlauf** with "Noch kein
+  Verlauf. Orte, die du nur anschaust, erscheinen hier." With an empty history there is **no**
+  "Alle löschen" action.
+- **A suggestion is only viewed, never saved**: searching "Neustadt" lists suggestions that carry
+  **no save button at all**, and tapping "Neustadt (Eichsfeld)" left the screen at once. The
+  dashboard then showed **that place's own data** (-2 °C, Bedeckt, Min -5 / Max 0 °C, wind 17 km/h,
+  gusts 30 km/h) rather than Hamburg's, and the star on the card was **outlined** with the
+  accessibility label "Als Favorit hinzufügen".
+- **The star saves**: one tap filled it in gold and printed "Zu Favoriten hinzugefügt."; the weather
+  on screen did not change, so no second request was triggered. In the manager the place now sat
+  under **Favoriten** with a filled star and its own menu, while the **Verlauf stayed empty** —
+  saving takes a place out of the history.
+- **Compact overflow menu**: the favourite's menu holds "Als Hauptstandort setzen", "Nach oben
+  verschieben" and "Nach unten verschieben"; with a single favourite the two move entries render
+  greyed out.
+- **Home swap keeps everything**: "Als Hauptstandort setzen" moved Neustadt into the Hauptstandort
+  section (house symbol, "Wird gerade angezeigt") and put Hamburg into Favoriten with its star,
+  under the message "Hauptstandort aktualisiert."
+- **Un-favouriting moves into the history**: the star of the Hamburg row printed "Aus Favoriten
+  entfernt – der Ort bleibt im Verlauf." and the row reappeared as the first entry of the Verlauf
+  with three actions (outlined star, delete, menu); the home location and the displayed place were
+  untouched.
+- **History order is newest first**: after viewing "Wejherowo" through a suggestion, the Verlauf
+  listed Wejherowo (marked "Wird gerade angezeigt") **above** Hamburg.
+- **One entry can be deleted alone**: the delete icon of the Hamburg row removed only Hamburg and
+  left Wejherowo in place.
+- **Bulk delete asks first**: "Alle löschen" opened a dialog titled "Verlauf löschen?" with the text
+  "Möchtest Du alle Orte aus dem Verlauf entfernen? Favoriten und Hauptstandort bleiben erhalten."
+  and the actions Abbrechen / Löschen. **The system back key closed the dialog** and left the screen
+  with its history intact. Confirming with "Löschen" emptied the section, removed the "Alle löschen"
+  action, printed "Verlauf gelöscht.", and the display fell back to the home location, which the
+  manager then marked "Wird gerade angezeigt".
+- **The home location cannot be lost by accident**: its star reads "Hauptstandort: dieser Ort ist
+  immer gespeichert" and tapping it only prints "Der Hauptstandort ist immer gespeichert."; its menu
+  holds the single destructive entry "Hauptstandort aufheben", drawn in the error colour. Removing it
+  while no favourites existed returned the app to the setup screen, as before.
+- **Persistence**: after `am force-stop` and a cold start the app opened on the dashboard with the
+  same home location and its forecast; nothing had to be entered again.
+- **Logcat** for the session: no `FATAL EXCEPTION`, and no warning or error logged by the
+  application process — the only `AndroidRuntime` lines come from the `uiautomator` dump itself.
+
+Not verified on the device in this iteration: the **30-entry cap and its eviction** were exercised by
+the repository and ViewModel unit tests, not by browsing 31 places on the emulator; and that saving
+or un-saving a place triggers **no** forecast request is proven by the ViewModel tests that count the
+calls of a fake API, not by inspecting the emulator's network traffic. The stored data on this
+emulator happened to be empty when the new build was installed (an earlier iteration's backup test
+had wiped it), so reading a **populated** pre-history preferences file on a real device was not
+exercised here — that path is covered by the instrumented `SettingsStoreTest`, which loads a
+preferences file written without the `recent_locations` key.
+
 ## Known limitations
 
 - **Theme:** a cold start with a pinned light/dark choice can show one frame in the system scheme
@@ -1144,6 +1288,19 @@ application.
   a plain `rememberScrollState` / `LazyColumn` state, which is not saved, so a rotation or a theme
   switch returns those lists to the top. The saved locations, the selection and the pending search
   are held by the ViewModel and DataStore and survive.
+- The **history is a bounded, local list of places that were actually displayed** — at most 30,
+  never synchronised, and never a log of search queries: a place that was only typed into the
+  search field but never opened does not appear. Like a favourite, an entry keeps the name and
+  region the geocoding service returned when it was created; if the service later labels the same
+  id differently, the stored entry is not rewritten.
+- A place can only be in one role at a time, which is what the user sees, but it also means the
+  history cannot act as a second ordering: un-favouriting always puts a place at the **top** of the
+  history, and favouriting a history entry puts it at the **end** of the favourites. There is no
+  manual ordering of the history.
+- The home location has no star action: tapping its star only explains that the place is always
+  saved. Its single destructive action, "Hauptstandort aufheben", sits in the overflow menu. If it
+  was the only saved place, the app returns to the setup screen; if favourites exist, one of them
+  becomes the displayed location.
 - The suggestion dropdown is a custom anchored `Surface` instead of `ExposedDropdownMenu`,
   which is what allows the fixed height cap, the independent scrolling and the keyboard-aware
   placement; the trade-off is that it is not announced as a menu by accessibility services.
@@ -1197,6 +1354,8 @@ application.
   requests it receives is quoted from Open-Meteo's own terms and privacy page and can change there
   without any change in this repository; the screen says so. No legal assessment is made anywhere
   in the app or in this document.
-- Lint reports only "newer version available" advisories for Gradle 9.6.0, core-ktx,
-  Compose BOM, the Kotlin plugins and kotlinx-serialization. Upgrading the Kotlin plugins
-  beyond 2.2.x is intentionally avoided while AGP's embedded Kotlin stdlib is pinned.
+- Lint reports **no errors**. Nine advisories remain: "newer version available" for Gradle 9.6.0,
+  core-ktx, Compose BOM, the Kotlin plugins and kotlinx-serialization, and three string resources
+  (`status_live`, `data_may_be_outdated`, `offline_notice`) that were already unused before this
+  iteration and stay in place because removing them is unrelated to this change. Upgrading the
+  Kotlin plugins beyond 2.2.x is intentionally avoided while AGP's embedded Kotlin stdlib is pinned.

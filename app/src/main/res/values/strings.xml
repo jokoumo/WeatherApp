@@ -115,24 +115,36 @@
     <string name="search_hint">Ort suchen, z. B. Hamburg</string>
     <string name="search_no_results">Keine Orte gefunden.</string>
     <string name="search_short_query">Bitte gib mindestens zwei Zeichen ein.</string>
-    <string name="locations_title">Gespeicherte Orte</string>
-    <string name="locations_home">Startseite</string>
+    <string name="locations_home">Hauptstandort</string>
     <string name="locations_favorites">Favoriten</string>
-    <string name="locations_no_favorites">Noch keine Favoriten. Füge Orte hinzu, um schnell zwischen ihnen zu wechseln.</string>
-    <string name="no_home_location">Es ist keine Startseite festgelegt.</string>
+    <string name="locations_history">Verlauf</string>
+    <string name="locations_no_favorites">Noch keine Favoriten. Tippe den Stern an, um einen Ort zu speichern.</string>
+    <string name="locations_no_history">Noch kein Verlauf. Orte, die du nur anschaust, erscheinen hier.</string>
+    <string name="no_home_location">Es ist kein Hauptstandort festgelegt.</string>
     <string name="locations_currently_shown">Wird gerade angezeigt</string>
-    <string name="locations_add_hint">Tippe auf einen Ort, um das Wetter anzuzeigen.</string>
-    <string name="action_set_home">Als Startseite festlegen</string>
-    <string name="action_remove_location">Entfernen</string>
+    <string name="locations_add_hint">Tippe auf einen Ort, um das Wetter anzuzeigen. Gespeichert wird nur, was du mit dem Stern markierst.</string>
+    <string name="action_set_home">Als Hauptstandort setzen</string>
+    <string name="action_remove_home_location">Hauptstandort aufheben</string>
+    <string name="action_add_favorite">Als Favorit hinzufügen</string>
+    <string name="action_remove_favorite">Aus Favoriten entfernen</string>
+    <string name="action_remove_recent">Aus dem Verlauf entfernen</string>
+    <string name="action_clear_history">Alle löschen</string>
+    <string name="action_more_actions">Weitere Aktionen</string>
+    <string name="content_description_home_location">Hauptstandort</string>
+    <string name="content_description_star_home">Hauptstandort: dieser Ort ist immer gespeichert</string>
+    <string name="dialog_clear_history_title">Verlauf löschen?</string>
+    <string name="dialog_clear_history_message">Möchtest Du alle Orte aus dem Verlauf entfernen? Favoriten und Hauptstandort bleiben erhalten.</string>
+    <string name="action_delete">Löschen</string>
     <string name="action_move_up">Nach oben verschieben</string>
     <string name="action_move_down">Nach unten verschieben</string>
-    <string name="action_select_location">Anzeigen</string>
     <string name="locations_screen_title">Orte verwalten</string>
     <string name="action_back">Zurück</string>
-    <string name="action_add_favorite">Als Favorit hinzufügen</string>
     <string name="message_location_duplicate">Dieser Ort ist bereits gespeichert.</string>
-    <string name="message_location_added">Ort hinzugefügt.</string>
-    <string name="message_home_location_set">Startseite aktualisiert.</string>
+    <string name="message_location_added">Zu Favoriten hinzugefügt.</string>
+    <string name="message_location_unfavorited">Aus Favoriten entfernt – der Ort bleibt im Verlauf.</string>
+    <string name="message_home_location_set">Hauptstandort aktualisiert.</string>
+    <string name="message_home_location_protected">Der Hauptstandort ist immer gespeichert.</string>
+    <string name="message_history_cleared">Verlauf gelöscht.</string>
 
     <!-- Navigation and settings -->
     <string name="action_settings">Einstellungen</string>
@@ -200,15 +212,15 @@
     <string name="privacy_section_general">Datenschutz bei WetterPlus</string>
     <string name="privacy_general_body">Zur Nutzung ist kein Konto und keine Anmeldung nötig; WetterPlus legt kein Nutzerprofil an. Ganz ohne Übertragung geht es aber nicht: Beim Abruf der Wetterdaten sieht der Wetterdienst bei jeder Anfrage mindestens die IP-Adresse des Geräts. Zusätzlich kann Android je nach Geräteeinstellung Sicherungs- und Übertragungsfunktionen anbieten, deren Umfang vom Gerät und von der Android-Version abhängt.</string>
     <string name="privacy_section_local">Lokal gespeicherte Daten</string>
-    <string name="privacy_local_body">Auf dem Gerät gespeichert werden: dein Startort, deine Favoritenorte und ihre Reihenfolge, der zuletzt angezeigte Ort, die Darstellungsauswahl (System, Hell oder Dunkel) und der Wetterbericht je Ort samt Abrufzeitpunkt. Orte und Einstellungen liegen in einer Preferences-Datei, die Wetterberichte in einer lokalen Datenbank. Diese Angaben bleiben auf dem Gerät, sofern du sie nicht selbst über eine Sicherung überträgst – dazu mehr im Abschnitt „Datenspeicherung und Sicherung“.</string>
+    <string name="privacy_local_body">Auf dem Gerät gespeichert werden: dein Hauptstandort, deine Favoritenorte und ihre Reihenfolge, der zuletzt angezeigte Ort, der Verlauf der zuletzt angeschauten Orte, die Darstellungsauswahl (System, Hell oder Dunkel) und der Wetterbericht je Ort samt Abrufzeitpunkt. Orte und Einstellungen liegen in einer Preferences-Datei, die Wetterberichte in einer lokalen Datenbank. Diese Angaben bleiben auf dem Gerät, sofern du sie nicht selbst über eine Sicherung überträgst – dazu mehr im Abschnitt „Datenspeicherung und Sicherung“.</string>
     <string name="privacy_section_requests">Wetterdaten und externe Dienste</string>
     <string name="privacy_requests_body">Für jeden angezeigten Ort fragt die App den Wetterdienst Open-Meteo über HTTPS ab: api.open-meteo.com, Endpunkt „v1/forecast“. Übertragen werden die Koordinaten des gewählten Ortes und die angeforderten Wetterelemente; der Dienst schickt den passenden Bericht zurück. Ein API-Schlüssel ist nicht im Einsatz. Bei jeder Anfrage ist für den Dienst auch die öffentliche IP-Adresse des Geräts sichtbar. Die übermittelten Koordinaten sind die von dir ausgewählten Orte – die App fragt die tatsächliche Position des Geräts nicht ab.</string>
     <string name="privacy_section_search">Ortssuche</string>
-    <string name="privacy_search_body">Was du in die Ortssuche eingibst, wird an die Open-Meteo Geocoding-API übermittelt (geocoding-api.open-meteo.com, Endpunkt „v1/search“), damit passende Ortsnamen gefunden werden können. Erst wenn du einen Vorschlag auswählst, wird er gespeichert und für Wetteranfragen benutzt. Die App hat dafür keine Berechtigung für den Standort des Geräts und erfragt keine GPS-Daten.</string>
+    <string name="privacy_search_body">Was du in die Ortssuche eingibst, wird an die Open-Meteo Geocoding-API übermittelt (geocoding-api.open-meteo.com, Endpunkt „v1/search“), damit passende Ortsnamen gefunden werden können. Erst wenn du einen Vorschlag auswählst, wird er gespeichert und für Wetteranfragen benutzt – als zuletzt angesehener Ort im Verlauf, nicht als Favorit. Ein Favorit wird daraus erst, wenn du ihn ausdrücklich mit dem Stern markierst. Die App hat dafür keine Berechtigung für den Standort des Geräts und erfragt keine GPS-Daten.</string>
     <string name="privacy_section_tracking">Cookies und Tracking</string>
     <string name="privacy_tracking_body">WetterPlus setzt keine Cookies, bindet keine Werbe- und keine Analyse-Bibliotheken ein und verschickt keine Nutzungsberichte oder Telemetrie. Im Netzwerkverkehr der App stecken keine Tracking-Kennungen. Was der Wetterdienst auf seinen eigenen Servern protokolliert, liegt außerhalb dieser App und ist in den Hinweisen des Dienstes nachzulesen.</string>
     <string name="privacy_section_backup">Datenspeicherung und Sicherung</string>
-    <string name="privacy_backup_body">Orte und Einstellungen werden dauerhaft lokal gespeichert. Wetterberichte sind nur ein Zwischenspeicher: Sie werden bei Bedarf erneuert, ersetzt oder gelöscht und sind nach einer Neuinstallation jederzeit wieder abrufbar. Deshalb sind sie in den Backup-Regeln der App ausgeschlossen; für die Sicherung erhalten bleiben Startort, Favoriten mit ihrer Reihenfolge, der ausgewählte Ort und die Darstellung. Ob Android diese Daten sichert und wohin, hängt von den Backup-Einstellungen des Geräts und von der Android-Version ab.</string>
+    <string name="privacy_backup_body">Orte und Einstellungen werden dauerhaft lokal gespeichert. Wetterberichte sind nur ein Zwischenspeicher: Sie werden bei Bedarf erneuert, ersetzt oder gelöscht und sind nach einer Neuinstallation jederzeit wieder abrufbar. Deshalb sind sie in den Backup-Regeln der App ausgeschlossen; für die Sicherung erhalten bleiben Hauptstandort, Favoriten mit ihrer Reihenfolge, der Verlauf der zuletzt angeschauten Orte, der ausgewählte Ort und die Darstellung. Ob Android diese Daten sichert und wohin, hängt von den Backup-Einstellungen des Geräts und von der Android-Version ab.</string>
     <string name="privacy_section_provider">Datenschutz beim Wetterdienst</string>
     <string name="privacy_provider_body">Für die Verarbeitung der API-Anfragen ist Open-Meteo (OpenMeteo GmbH) selbst verantwortlich. Nach den dortigen Hinweisen zu Nutzungsbedingungen und Datenschutz verarbeitet Open-Meteo für den Betrieb und zur Verhinderung von Missbrauch IP-Adressen und behält Webserver-Logdateien – die auch Koordinaten enthalten können – 90 Tage lang, ohne sie an Dritte weiterzugeben. Diese Angaben stammen von Open-Meteo und können sich ändern.</string>
     <string name="privacy_provider_link_hint">Datenschutz- und Nutzungsbedingungen von Open-Meteo öffnen</string>
@@ -219,9 +231,10 @@
     <string name="privacy_backup_included_title">Vorgesehen für die Sicherung</string>
     <string name="privacy_backup_excluded_title">Von der Sicherung ausgeschlossen</string>
     <string-array name="privacy_local_items">
-        <item>Startort</item>
+        <item>Hauptstandort</item>
         <item>Favoritenorte und ihre Reihenfolge</item>
         <item>zuletzt angezeigter Ort</item>
+        <item>Verlauf der zuletzt angeschauten Orte</item>
         <item>Darstellungsauswahl: System, Hell oder Dunkel</item>
         <item>Wetterbericht je Ort mit Abrufzeitpunkt</item>
     </string-array>
@@ -243,7 +256,8 @@
         <item>kein Nutzerprofil durch WetterPlus</item>
     </string-array>
     <string-array name="privacy_backup_included">
-        <item>Startort, Favoriten und ihre Reihenfolge</item>
+        <item>Hauptstandort, Favoriten und ihre Reihenfolge</item>
+        <item>Verlauf der zuletzt angeschauten Orte</item>
         <item>ausgewählter Ort</item>
         <item>Darstellungsauswahl</item>
     </string-array>

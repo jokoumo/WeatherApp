@@ -2,6 +2,7 @@ package com.example.weatherapp.data.repository
 
 import com.example.weatherapp.domain.model.DataLoadFailure
 import com.example.weatherapp.domain.model.LocationSettings
+import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.domain.model.isSamePlaceAs
 import com.example.weatherapp.testing.FakeGeocodingApi
 import com.example.weatherapp.testing.FakeSettingsStore
@@ -28,6 +29,10 @@ import java.net.UnknownHostException
  * Location management rules: home location swaps that never drop the previous home, ordered
  * favorites, duplicate prevention, and the selection fallback that keeps a valid location
  * selected after removals while an explicit home change always selects the new home.
+ *
+ * The second half covers the history: selecting a searched place shows it without favouriting it,
+ * the history stays duplicate-free and sorted by most recent use, its maximum evicts only the least
+ * recently used entry, and favorites and history can never hold the same place at the same time.
  */
 class LocationRepositoryTest {
 
@@ -299,7 +304,7 @@ class LocationRepositoryTest {
     }
 
     @Test
-    fun `removing the selected favorite falls back to the home location`() = runTest {
+    fun `removing the selected favorite keeps it selected and moves it into the history`() = runTest {
         val (repository, _) = repositoryWith(
             LocationSettings(
                 homeLocation = hamburg,
@@ -311,7 +316,10 @@ class LocationRepositoryTest {
         val settings = repository.removeFavorite(tokyo.id)
 
         assertEquals(listOf(berlin.id), settings.favorites.map { it.id })
-        assertEquals(hamburg.id, settings.selectedLocationId)
+        // Un-favouriting a place does not forget it: it stays on screen and lands in the history.
+        assertEquals(listOf(tokyo.id), settings.recentLocations.map { it.id })
+        assertEquals(tokyo.id, settings.selectedLocationId)
+        assertEquals(tokyo.id, settings.resolveSelectedLocation()?.id)
     }
 
     @Test
@@ -409,5 +417,299 @@ class LocationRepositoryTest {
         val result = repository.searchLocations("Xyzabc")
         assertTrue(result.isEmpty)
         assertNull(result.failure)
+    }
+
+    // ---------------------------------------------------------------- history
+
+    @Test
+    fun `selecting a searched location shows it without favouriting it`() = runTest {
+        val (repository, _) = repositoryWith(LocationSettings(homeLocation = hamburg))
+
+        val settings = repository.selectLocation(tokyo)
+
+        assertEquals(tokyo.id, settings.selectedLocationId)
+        assertEquals(tokyo.id, settings.resolveSelectedLocation()?.id)
+        assertTrue("viewing a place never saves it as a favourite", settings.favorites.isEmpty())
+        assertEquals(listOf(tokyo.id), settings.recentLocations.map { it.id })
+    }
+
+    @Test
+    fun `selecting the same searched location twice keeps one history entry`() = runTest {
+        val (repository, _) = repositoryWith(LocationSettings(homeLocation = hamburg))
+
+        repository.selectLocation(tokyo)
+        val settings = repository.selectLocation(tokyo)
+
+        assertEquals(listOf(tokyo.id), settings.recentLocations.map { it.id })
+    }
+
+    @Test
+    fun `a searched place that matches a saved one by coordinates reuses the saved entry`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = hamburg, favorites = listOf(berlin)),
+        )
+        // Same rounded coordinates as the stored Berlin, but a different id and name.
+        val lookalike = SavedLocation(
+            id = "999999",
+            name = "Berlin (Stadt)",
+            latitude = berlin.latitude,
+            longitude = berlin.longitude,
+        )
+
+        val settings = repository.selectLocation(lookalike)
+
+        assertEquals(berlin.id, settings.selectedLocationId)
+        assertTrue(settings.recentLocations.isEmpty())
+        assertEquals(listOf(berlin.id), settings.favorites.map { it.id })
+    }
+
+    @Test
+    fun `selecting a favorite or the home location does not add it to the history`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = hamburg, favorites = listOf(berlin)),
+        )
+
+        repository.selectLocation(berlin)
+        val settings = repository.selectLocation(hamburg)
+
+        assertTrue(settings.recentLocations.isEmpty())
+        assertEquals(hamburg.id, settings.selectedLocationId)
+    }
+
+    @Test
+    fun `the history is ordered by most recent use`() = runTest {
+        val (repository, _) = repositoryWith(LocationSettings(homeLocation = hamburg))
+
+        repository.selectLocation(tokyo)
+        repository.selectLocation(paris)
+        val settings = repository.selectLocation(madrid)
+
+        assertEquals(listOf(madrid.id, paris.id, tokyo.id), settings.recentLocations.map { it.id })
+    }
+
+    @Test
+    fun `selecting a history entry again moves it to the top`() = runTest {
+        val (repository, _) = repositoryWith(LocationSettings(homeLocation = hamburg))
+        repository.selectLocation(tokyo)
+        repository.selectLocation(paris)
+        repository.selectLocation(madrid)
+
+        val settings = repository.selectLocation(tokyo.id)
+
+        assertEquals(listOf(tokyo.id, madrid.id, paris.id), settings.recentLocations.map { it.id })
+        assertEquals(tokyo.id, settings.selectedLocationId)
+    }
+
+    @Test
+    fun `the history holds at most the configured maximum and drops the oldest entry`() = runTest {
+        val (repository, _) = repositoryWith(LocationSettings(homeLocation = hamburg))
+        val many = (1..LocationSettings.MAX_RECENT_LOCATIONS + 5).map { index ->
+            SavedLocation(
+                id = "gen-$index",
+                name = "Ort $index",
+                latitude = 10.0 + index,
+                longitude = 20.0 + index,
+            )
+        }
+
+        var settings = LocationSettings()
+        many.forEach { location -> settings = repository.selectLocation(location) }
+
+        assertEquals(LocationSettings.MAX_RECENT_LOCATIONS, settings.recentLocations.size)
+        assertEquals(many.last().id, settings.recentLocations.first().id)
+        // The six least recently used places are the ones that fell off.
+        assertTrue(settings.recentLocations.none { it.id == many.first().id })
+        assertTrue(settings.recentLocations.any { it.id == many[6].id })
+        assertEquals(many.last().id, settings.selectedLocationId)
+    }
+
+    @Test
+    fun `the history never evicts a favorite or the home location`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = hamburg, favorites = listOf(berlin)),
+        )
+        val many = (1..LocationSettings.MAX_RECENT_LOCATIONS + 3).map { index ->
+            SavedLocation(
+                id = "busy-$index",
+                name = "Ort $index",
+                latitude = 30.0 + index,
+                longitude = 40.0 + index,
+            )
+        }
+
+        var settings = LocationSettings()
+        many.forEach { location -> settings = repository.selectLocation(location) }
+
+        assertEquals(hamburg.id, settings.homeLocation?.id)
+        assertEquals(listOf(berlin.id), settings.favorites.map { it.id })
+        assertEquals(LocationSettings.MAX_RECENT_LOCATIONS, settings.recentLocations.size)
+        assertTrue(settings.recentLocations.none { it.id == hamburg.id || it.id == berlin.id })
+    }
+
+    @Test
+    fun `adding a favorite takes the place out of the history`() = runTest {
+        val (repository, _) = repositoryWith(LocationSettings(homeLocation = hamburg))
+        repository.selectLocation(tokyo)
+        repository.selectLocation(paris)
+
+        assertTrue(repository.addFavorite(tokyo))
+
+        val settings = repository.currentSettings()
+        assertEquals(listOf(tokyo.id), settings.favorites.map { it.id })
+        assertEquals(listOf(paris.id), settings.recentLocations.map { it.id })
+    }
+
+    @Test
+    fun `removing a favorite puts it at the top of the history`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = hamburg,
+                favorites = listOf(berlin, tokyo),
+                recentLocations = listOf(paris),
+                selectedLocationId = hamburg.id,
+            ),
+        )
+
+        val settings = repository.removeFavorite(berlin.id)
+
+        assertEquals(listOf(berlin.id, paris.id), settings.recentLocations.map { it.id })
+        assertEquals(listOf(tokyo.id), settings.favorites.map { it.id })
+        assertEquals(hamburg.id, settings.selectedLocationId)
+    }
+
+    @Test
+    fun `the home location cannot be removed through the favorite toggle`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = hamburg, favorites = listOf(berlin)),
+        )
+
+        val settings = repository.removeFavorite(hamburg.id)
+
+        assertEquals(hamburg.id, settings.homeLocation?.id)
+        assertEquals(listOf(berlin.id), settings.favorites.map { it.id })
+        assertTrue("the protected home location never lands in the history", settings.recentLocations.isEmpty())
+    }
+
+    @Test
+    fun `removing one history entry leaves favorites and home location alone`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = hamburg,
+                favorites = listOf(berlin),
+                recentLocations = listOf(tokyo, paris),
+                selectedLocationId = hamburg.id,
+            ),
+        )
+
+        val settings = repository.removeRecentLocation(tokyo.id)
+
+        assertEquals(listOf(paris.id), settings.recentLocations.map { it.id })
+        assertEquals(hamburg.id, settings.homeLocation?.id)
+        assertEquals(listOf(berlin.id), settings.favorites.map { it.id })
+        assertEquals(hamburg.id, settings.selectedLocationId)
+    }
+
+    @Test
+    fun `clearing the history keeps favorites, the home location and the selection`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = hamburg,
+                favorites = listOf(berlin, tokyo),
+                recentLocations = listOf(paris, madrid),
+                selectedLocationId = berlin.id,
+            ),
+        )
+
+        val settings = repository.clearRecentLocations()
+
+        assertTrue(settings.recentLocations.isEmpty())
+        assertEquals(hamburg.id, settings.homeLocation?.id)
+        assertEquals(listOf(berlin.id, tokyo.id), settings.favorites.map { it.id })
+        assertEquals(berlin.id, settings.selectedLocationId)
+    }
+
+    @Test
+    fun `deleting the selected history entry falls back to the home location`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = hamburg,
+                favorites = listOf(berlin),
+                recentLocations = listOf(tokyo),
+                selectedLocationId = tokyo.id,
+            ),
+        )
+
+        val settings = repository.removeRecentLocation(tokyo.id)
+
+        assertTrue(settings.recentLocations.isEmpty())
+        assertEquals(hamburg.id, settings.selectedLocationId)
+        assertEquals(hamburg.id, settings.resolveSelectedLocation()?.id)
+    }
+
+    @Test
+    fun `clearing the history while a history entry is shown selects the home location`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = hamburg,
+                favorites = listOf(berlin),
+                recentLocations = listOf(tokyo, paris),
+                selectedLocationId = paris.id,
+            ),
+        )
+
+        val settings = repository.clearRecentLocations()
+
+        assertEquals(hamburg.id, settings.selectedLocationId)
+    }
+
+    @Test
+    fun `history entries survive a restart because they are persisted`() = runTest {
+        val store = FakeSettingsStore(LocationSettings(homeLocation = hamburg))
+        val repository = LocationRepository(store, FakeGeocodingApi())
+
+        repository.selectLocation(tokyo)
+        repository.selectLocation(paris)
+
+        // A fresh repository over the same store is what the next app start does.
+        val restarted = LocationRepository(store, FakeGeocodingApi())
+        val settings = restarted.currentSettings()
+
+        assertEquals(listOf(paris.id, tokyo.id), settings.recentLocations.map { it.id })
+        assertEquals(paris.id, settings.selectedLocationId)
+    }
+
+    @Test
+    fun `a history entry can become the home location without duplicates`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(
+                homeLocation = hamburg,
+                favorites = listOf(berlin, tokyo),
+                recentLocations = listOf(paris, madrid),
+                selectedLocationId = paris.id,
+            ),
+        )
+
+        val settings = repository.setHomeLocation(paris)
+
+        assertEquals(paris.id, settings.homeLocation?.id)
+        assertTrue(settings.recentLocations.none { it.id == paris.id })
+        assertEquals(listOf(madrid.id), settings.recentLocations.map { it.id })
+        // The previous home becomes a regular favourite at the end of the list.
+        assertEquals(listOf(berlin.id, tokyo.id, hamburg.id), settings.favorites.map { it.id })
+        assertEquals(paris.id, settings.selectedLocationId)
+        assertEquals(5, settings.selectableLocations.size)
+        assertEquals(5, settings.selectableLocations.distinctBy { it.coordinateKey }.size)
+    }
+
+    @Test
+    fun `selecting an unknown location changes nothing`() = runTest {
+        val (repository, _) = repositoryWith(
+            LocationSettings(homeLocation = hamburg, selectedLocationId = hamburg.id),
+        )
+
+        val settings = repository.selectLocation("no-such-id")
+
+        assertEquals(hamburg.id, settings.selectedLocationId)
+        assertTrue(settings.recentLocations.isEmpty())
     }
 }

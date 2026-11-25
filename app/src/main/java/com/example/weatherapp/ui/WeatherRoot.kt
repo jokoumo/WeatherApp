@@ -101,6 +101,11 @@ fun WeatherRoot(
                 onRefresh = viewModel::refresh,
                 onOpenLocations = { open(AppDestination.LOCATIONS) },
                 onOpenSettings = { open(AppDestination.SETTINGS) },
+                onToggleFavorite = {
+                    // The star always belongs to the location the card shows, which is the selected
+                    // one; toggling it never changes the selection or triggers a reload.
+                    state.weather.location?.let(viewModel::toggleFavorite)
+                },
                 onMessageShown = viewModel::consumeMessage,
                 modifier = if (onDashboard) Modifier else Modifier.semantics { hideFromAccessibility() },
             )
@@ -111,9 +116,12 @@ fun WeatherRoot(
                     search = state.search,
                     message = state.message,
                     onSelect = viewModel::selectLocation,
+                    onSelectSearched = viewModel::selectSearchedLocation,
+                    onToggleFavorite = viewModel::toggleFavorite,
                     onSetHome = viewModel::setHomeLocation,
-                    onAddFavorite = viewModel::addFavorite,
                     onRemove = viewModel::removeLocation,
+                    onRemoveRecent = viewModel::removeRecentLocation,
+                    onClearRecent = viewModel::clearRecentLocations,
                     onMove = viewModel::moveFavorite,
                     onQueryChange = viewModel::onSearchQueryChange,
                     onMessageShown = viewModel::consumeMessage,

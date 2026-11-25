@@ -28,18 +28,23 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -56,10 +61,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -77,9 +84,14 @@ import com.example.weatherapp.ui.weather.messageRes
 /**
  * Full screen location management: the navigation header and the search field stay fixed at the
  * top, the saved locations live in a list that scrolls on its own, and search suggestions are
- * shown in a dropdown that floats over that list. The layout therefore never grows or shifts
- * when favourites or results are added, which the previous bottom sheet did. Navigation uses the
- * same top-left back arrow as every other secondary screen.
+ * shown in a dropdown that floats over that list. Navigation uses the same top-left back arrow as
+ * every other secondary screen.
+ *
+ * The list is ordered by role rather than by age: **Hauptstandort**, then **Favoriten**, then the
+ * **Verlauf** of places that were only looked at. A house marks the home location, a star marks a
+ * favourite, and the star of a history entry offers to make it one. Tapping a row - of a
+ * suggestion, a favourite or a history entry - selects that location and leaves the screen; every
+ * other control in a row performs only its own action.
  */
 @Composable
 fun LocationManagerScreen(
@@ -87,9 +99,12 @@ fun LocationManagerScreen(
     search: SearchUiState,
     message: UserMessage?,
     onSelect: (String) -> Unit,
+    onSelectSearched: (SavedLocation) -> Unit,
+    onToggleFavorite: (SavedLocation) -> Unit,
     onSetHome: (SavedLocation) -> Unit,
-    onAddFavorite: (SavedLocation) -> Unit,
     onRemove: (String) -> Unit,
+    onRemoveRecent: (String) -> Unit,
+    onClearRecent: () -> Unit,
     onMove: (String, Int) -> Unit,
     onQueryChange: (String) -> Unit,
     onMessageShown: () -> Unit,
@@ -105,9 +120,11 @@ fun LocationManagerScreen(
     // float over the list instead of pushing it down.
     var containerBounds by remember { mutableStateOf<Rect?>(null) }
     var fieldBounds by remember { mutableStateOf<Rect?>(null) }
+    var confirmClearHistory by remember { mutableStateOf(false) }
 
-    // Back closes the suggestions first and only then the screen itself.
-    BackHandler {
+    // Back closes the suggestions first and only then the screen itself. While the confirmation
+    // dialog is open the dialog owns the back key, so a press there only closes the dialog.
+    BackHandler(enabled = !confirmClearHistory) {
         if (suggestionsOpen) onQueryChange("") else onDismiss()
     }
 
@@ -155,13 +172,6 @@ fun LocationManagerScreen(
                     .onGloballyPositioned { coordinates -> fieldBounds = coordinates.boundsInRoot() },
             )
             Spacer(Modifier.height(16.dp))
-            Text(
-                text = stringResource(R.string.locations_title),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-            Spacer(Modifier.height(8.dp))
             // The list sits directly on the painted background rather than inside a Material
             // surface, so the content colour is provided here: otherwise widgets in the rows
             // would inherit Compose's default black and disappear in dark mode.
@@ -169,11 +179,16 @@ fun LocationManagerScreen(
                 SavedLocationsList(
                     settings = settings,
                     selectedId = selectedId,
-                    onSelect = onSelect,
+                    onSelect = { id ->
+                        onSelect(id)
+                        onDismiss()
+                    },
+                    onToggleFavorite = onToggleFavorite,
                     onSetHome = onSetHome,
                     onRemove = onRemove,
+                    onRemoveRecent = onRemoveRecent,
+                    onClearRecent = { confirmClearHistory = true },
                     onMove = onMove,
-                    onDismiss = onDismiss,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -191,8 +206,9 @@ fun LocationManagerScreen(
                 container = container,
                 imeBottomPx = imeBottom,
                 onItemClick = { location ->
-                    onAddFavorite(location)
-                    onQueryChange("")
+                    // Choosing a suggestion shows that place straight away; it does not save it.
+                    onSelectSearched(location)
+                    onDismiss()
                 },
             )
         }
@@ -208,83 +224,78 @@ fun LocationManagerScreen(
                 .padding(horizontal = 8.dp, vertical = 16.dp),
         )
     }
+
+    if (confirmClearHistory) {
+        AlertDialog(
+            onDismissRequest = { confirmClearHistory = false },
+            title = { Text(stringResource(R.string.dialog_clear_history_title)) },
+            text = { Text(stringResource(R.string.dialog_clear_history_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearHistory = false
+                    onClearRecent()
+                }) {
+                    Text(stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearHistory = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
 }
 
-/** Home location plus favourites, in a list that scrolls independently of the search field. */
+/**
+ * Home location, favourites and history in one list that scrolls independently of the search
+ * field. The three sections are separated by a divider and a small label, and the history header
+ * carries the compact "Alle löschen" action.
+ */
 @Composable
 private fun SavedLocationsList(
     settings: LocationSettings,
     selectedId: String?,
     onSelect: (String) -> Unit,
+    onToggleFavorite: (SavedLocation) -> Unit,
     onSetHome: (SavedLocation) -> Unit,
     onRemove: (String) -> Unit,
+    onRemoveRecent: (String) -> Unit,
+    onClearRecent: () -> Unit,
     onMove: (String, Int) -> Unit,
-    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
     LazyColumn(
         modifier = modifier,
         state = listState,
-        // A little scrollable space below the last favourite so it never sits flush against the
-        // bottom edge; it is content space, not a permanent empty footer.
-        contentPadding = PaddingValues(bottom = FAVORITES_BOTTOM_SPACE),
+        // A little scrollable space below the last entry so it never sits flush against the bottom
+        // edge; it is content space, not a permanent empty footer.
+        contentPadding = PaddingValues(bottom = LIST_BOTTOM_SPACE),
     ) {
-        item { SectionLabel(stringResource(R.string.locations_home)) }
+        item(key = "home-header") { SectionLabel(stringResource(R.string.locations_home)) }
         item(key = "home") {
             val home = settings.homeLocation
             if (home == null) {
                 InfoNote(text = stringResource(R.string.no_home_location))
             } else {
-                LocationListItem(
+                HomeLocationRow(
                     location = home,
-                    onClick = {
-                        onSelect(home.id)
-                        onDismiss()
-                    },
                     isSelected = home.id == selectedId,
-                    selectedLabel = if (home.id == selectedId) {
-                        stringResource(R.string.locations_currently_shown)
-                    } else {
-                        null
-                    },
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (home.id != selectedId) {
-                                TextButton(onClick = {
-                                    onSelect(home.id)
-                                    onDismiss()
-                                }) {
-                                    Text(stringResource(R.string.action_select_location))
-                                }
-                            }
-                            IconButton(onClick = { onRemove(home.id) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = stringResource(R.string.action_remove_location),
-                                    tint = locationActionColor(
-                                        MaterialTheme.colorScheme,
-                                        LocationActionEmphasis.DESTRUCTIVE,
-                                        enabled = true,
-                                    ),
-                                )
-                            }
-                        }
-                    },
+                    onSelect = { onSelect(home.id) },
+                    onRemove = { onRemove(home.id) },
                 )
             }
         }
 
         item(key = "favorites-header") {
-            Column {
-                Spacer(Modifier.height(14.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(14.dp))
-                SectionLabel(stringResource(R.string.locations_favorites))
+            SectionDivider()
+            SectionLabel(stringResource(R.string.locations_favorites))
+            Spacer(Modifier.height(4.dp))
+            if (settings.favorites.isEmpty()) {
+                InfoNote(text = stringResource(R.string.locations_no_favorites))
+            } else {
                 Spacer(Modifier.height(4.dp))
-                if (settings.favorites.isEmpty()) {
-                    InfoNote(text = stringResource(R.string.locations_no_favorites))
-                }
             }
         }
 
@@ -294,20 +305,72 @@ private fun SavedLocationsList(
                 isSelected = favorite.id == selectedId,
                 isFirst = index == 0,
                 isLast = index == settings.favorites.lastIndex,
-                onSelect = {
-                    onSelect(favorite.id)
-                    onDismiss()
-                },
+                onSelect = { onSelect(favorite.id) },
+                onToggleFavorite = { onToggleFavorite(favorite) },
                 onSetHome = { onSetHome(favorite) },
-                onRemove = { onRemove(favorite.id) },
                 onMoveUp = { onMove(favorite.id, -1) },
                 onMoveDown = { onMove(favorite.id, 1) },
+            )
+        }
+
+        item(key = "history-header") {
+            SectionDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.locations_history),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                // Only offered when there is something to clear, and deliberately quieter than the
+                // section label it belongs to.
+                if (settings.recentLocations.isNotEmpty()) {
+                    TextButton(
+                        onClick = onClearRecent,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_clear_history),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            if (settings.recentLocations.isEmpty()) {
+                InfoNote(text = stringResource(R.string.locations_no_history))
+            } else {
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+
+        itemsIndexed(settings.recentLocations, key = { _, location -> location.id }) { _, recent ->
+            HistoryRow(
+                location = recent,
+                isSelected = recent.id == selectedId,
+                onSelect = { onSelect(recent.id) },
+                onToggleFavorite = { onToggleFavorite(recent) },
+                onRemove = { onRemoveRecent(recent.id) },
+                onSetHome = { onSetHome(recent) },
             )
         }
     }
 }
 
-/** Small primary coloured label used for the "Startseite" and "Favoriten" sections. */
+/** Divider plus the space that separates two sections of the list. */
+@Composable
+private fun SectionDivider() {
+    Column {
+        Spacer(Modifier.height(14.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+/** Small primary coloured label used for the "Hauptstandort" and "Favoriten" sections. */
 @Composable
 private fun SectionLabel(text: String) {
     Text(
@@ -317,6 +380,51 @@ private fun SectionLabel(text: String) {
     )
 }
 
+/**
+ * The home location: recognisable by the house in front of its name, never by a star. It cannot be
+ * un-saved by accident, which is why the only action it offers sits in the overflow menu.
+ */
+@Composable
+private fun HomeLocationRow(
+    location: SavedLocation,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    LocationListItem(
+        location = location,
+        onClick = onSelect,
+        isSelected = isSelected,
+        selectedLabel = if (isSelected) stringResource(R.string.locations_currently_shown) else null,
+        leading = {
+            Icon(
+                imageVector = Icons.Default.Home,
+                contentDescription = stringResource(R.string.content_description_home_location),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(end = 10.dp),
+            )
+        },
+        trailingReserve = OVERFLOW_ACTIONS_WIDTH,
+        trailing = {
+            OverflowMenu(
+                actions = listOf(
+                    RowAction(
+                        label = stringResource(R.string.action_remove_home_location),
+                        icon = Icons.Default.Home,
+                        destructive = true,
+                        onClick = onRemove,
+                    ),
+                ),
+            )
+        },
+    )
+}
+
+/**
+ * A favourite: the filled star removes it from the favourites, everything less frequent - making
+ * it the home location and reordering - lives in the overflow menu so the row stays readable on a
+ * narrow phone.
+ */
 @Composable
 private fun FavoriteRow(
     location: SavedLocation,
@@ -324,8 +432,8 @@ private fun FavoriteRow(
     isFirst: Boolean,
     isLast: Boolean,
     onSelect: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onSetHome: () -> Unit,
-    onRemove: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
 ) {
@@ -334,49 +442,150 @@ private fun FavoriteRow(
         onClick = onSelect,
         isSelected = isSelected,
         selectedLabel = if (isSelected) stringResource(R.string.locations_currently_shown) else null,
-        // Four icon buttons: on narrow screens or with a large system font the row moves them
-        // below the text instead of squeezing the name into a few characters.
         trailingReserve = FAVORITE_ACTIONS_WIDTH,
         trailing = {
             val scheme = MaterialTheme.colorScheme
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onMoveUp, enabled = !isFirst) {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowUp,
-                        contentDescription = stringResource(R.string.action_move_up),
-                        tint = locationActionColor(scheme, LocationActionEmphasis.STANDARD, !isFirst),
-                    )
-                }
-                IconButton(onClick = onMoveDown, enabled = !isLast) {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = stringResource(R.string.action_move_down),
-                        tint = locationActionColor(scheme, LocationActionEmphasis.STANDARD, !isLast),
-                    )
-                }
-                IconButton(onClick = onSetHome) {
+                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(48.dp)) {
                     Icon(
                         imageVector = Icons.Default.Star,
-                        contentDescription = stringResource(R.string.action_set_home),
+                        contentDescription = stringResource(R.string.action_remove_favorite),
                         tint = locationActionColor(scheme, LocationActionEmphasis.EMPHASISED, true),
                     )
                 }
-                IconButton(onClick = onRemove) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = stringResource(R.string.action_remove_location),
-                        tint = locationActionColor(scheme, LocationActionEmphasis.DESTRUCTIVE, true),
-                    )
-                }
+                OverflowMenu(
+                    actions = listOf(
+                        RowAction(
+                            label = stringResource(R.string.action_set_home),
+                            icon = Icons.Default.Home,
+                            onClick = onSetHome,
+                        ),
+                        RowAction(
+                            label = stringResource(R.string.action_move_up),
+                            icon = Icons.Default.KeyboardArrowUp,
+                            enabled = !isFirst,
+                            onClick = onMoveUp,
+                        ),
+                        RowAction(
+                            label = stringResource(R.string.action_move_down),
+                            icon = Icons.Default.KeyboardArrowDown,
+                            enabled = !isLast,
+                            onClick = onMoveDown,
+                        ),
+                    ),
+                )
             }
         },
     )
 }
 
 /**
+ * A history entry: an outlined star turns it into a favourite, the remove icon drops just this
+ * entry, and the overflow menu offers the one less frequent action.
+ */
+@Composable
+private fun HistoryRow(
+    location: SavedLocation,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onRemove: () -> Unit,
+    onSetHome: () -> Unit,
+) {
+    LocationListItem(
+        location = location,
+        onClick = onSelect,
+        isSelected = isSelected,
+        selectedLabel = if (isSelected) stringResource(R.string.locations_currently_shown) else null,
+        trailingReserve = HISTORY_ACTIONS_WIDTH,
+        trailing = {
+            val scheme = MaterialTheme.colorScheme
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_star_outline),
+                        contentDescription = stringResource(R.string.action_add_favorite),
+                        tint = locationActionColor(scheme, LocationActionEmphasis.STANDARD, true),
+                    )
+                }
+                IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = stringResource(R.string.action_remove_recent),
+                        tint = locationActionColor(scheme, LocationActionEmphasis.DESTRUCTIVE, true),
+                    )
+                }
+                OverflowMenu(
+                    actions = listOf(
+                        RowAction(
+                            label = stringResource(R.string.action_set_home),
+                            icon = Icons.Default.Home,
+                            onClick = onSetHome,
+                        ),
+                    ),
+                )
+            }
+        },
+    )
+}
+
+/** One entry of an overflow menu; only the actions that apply to a row are ever built. */
+private data class RowAction(
+    val label: String,
+    val onClick: () -> Unit,
+    val icon: ImageVector? = null,
+    val enabled: Boolean = true,
+    val destructive: Boolean = false,
+)
+
+/**
+ * Compact contextual menu of a location row. It holds the actions that do not deserve a permanent
+ * icon, and it opens on its own: pressing it never selects the location and never leaves the
+ * screen.
+ */
+@Composable
+private fun OverflowMenu(actions: List<RowAction>) {
+    var expanded by remember { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    Box {
+        IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = stringResource(R.string.action_more_actions),
+                tint = locationActionColor(scheme, LocationActionEmphasis.STANDARD, true),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            actions.forEach { action ->
+                DropdownMenuItem(
+                    text = { Text(action.label) },
+                    onClick = {
+                        expanded = false
+                        action.onClick()
+                    },
+                    enabled = action.enabled,
+                    leadingIcon = action.icon?.let { vector ->
+                        { Icon(vector, contentDescription = null) }
+                    },
+                    colors = if (action.destructive) {
+                        MenuDefaults.itemColors(
+                            textColor = scheme.error,
+                            leadingIconColor = scheme.error,
+                        )
+                    } else {
+                        MenuDefaults.itemColors()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
  * Search suggestions in a floating Material 3 surface directly under the search field. It is drawn
- * over the favourites list, so showing or hiding it never moves the rest of the screen, and it
- * stays inside the space between the field and the keyboard.
+ * over the list, so showing or hiding it never moves the rest of the screen, and it stays inside
+ * the space between the field and the keyboard. Tapping a suggestion shows that place immediately;
+ * saving it stays an explicit decision the user makes with the star.
  */
 @Composable
 private fun SearchSuggestionsDropdown(
@@ -445,17 +654,6 @@ private fun SearchSuggestionsDropdown(
                     location = location,
                     onClick = { onItemClick(location) },
                     modifier = Modifier.padding(horizontal = 12.dp),
-                    trailing = {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = stringResource(R.string.action_add_favorite),
-                            tint = locationActionColor(
-                                MaterialTheme.colorScheme,
-                                LocationActionEmphasis.EMPHASISED,
-                                enabled = true,
-                            ),
-                        )
-                    },
                 )
             }
         }
@@ -503,10 +701,15 @@ internal fun locationActionColor(
  * first favourite. */
 internal const val DISABLED_ACTION_ALPHA = 0.38f
 
-/** Small scrollable bottom space so the last favourite never sits flush against the edge. */
-private val FAVORITES_BOTTOM_SPACE = 24.dp
+/** Small scrollable bottom space so the last entry never sits flush against the edge. */
+private val LIST_BOTTOM_SPACE = 24.dp
 
-/** Four 48 dp icon buttons plus the gap in front of them, as needed by [LocationListItem]. */
-private val FAVORITE_ACTIONS_WIDTH = 48.dp * 4 + 8.dp
+/**
+ * Widths the row layout reserves for the action buttons, so that a long location name is moved
+ * above the actions instead of being squeezed into a few characters.
+ */
+private val OVERFLOW_ACTIONS_WIDTH = 48.dp
+private val FAVORITE_ACTIONS_WIDTH = 48.dp * 2 + 8.dp
+private val HISTORY_ACTIONS_WIDTH = 48.dp * 3 + 8.dp
 private val SUGGESTION_GAP = 8.dp
 private const val MAX_SUGGESTION_HEIGHT_FRACTION = 0.45f

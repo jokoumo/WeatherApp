@@ -14,7 +14,9 @@ import com.example.weatherapp.testing.MutableClock
 import com.example.weatherapp.testing.berlin
 import com.example.weatherapp.testing.geocoderResult
 import com.example.weatherapp.testing.hamburg
+import com.example.weatherapp.testing.paris
 import com.example.weatherapp.testing.sampleForecastDto
+import com.example.weatherapp.testing.tokyo
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -432,5 +434,277 @@ class MainViewModelTest {
         assertNotNull(weather.todayMax)
         assertTrue((weather.todayMin ?: 0.0) <= (weather.todayMax ?: 0.0))
         assertEquals(2026, weather.today?.year ?: 0)
+    }
+
+    // ------------------------------------------------------------ search to dashboard
+
+    @Test
+    fun `a tapped suggestion is shown at once without becoming a favorite`() = withViewModel {
+        advanceUntilIdle()
+
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(tokyo.id, state.weather.location?.id)
+        assertTrue("weather loads for a location that is not saved", state.weather.hasData)
+        assertEquals(2, forecastApi.callCount)
+        assertTrue("browsing a place never saves it", state.settings.favorites.isEmpty())
+        assertEquals(listOf(tokyo.id), state.settings.recentLocations.map { it.id })
+        assertEquals("", state.search.query)
+        assertTrue(state.search.results.isEmpty())
+    }
+
+    @Test
+    fun `the dashboard star reports the role of the displayed location`() = withViewModel {
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.displayedLocationIsHome)
+
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.displayedLocationIsFavorite)
+        assertTrue(viewModel.uiState.value.displayedLocationIsRecent)
+
+        viewModel.toggleFavorite(tokyo)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.displayedLocationIsFavorite)
+        assertFalse(viewModel.uiState.value.displayedLocationIsRecent)
+    }
+
+    @Test
+    fun `selecting the same suggestion twice keeps a single history entry`() = withViewModel {
+        advanceUntilIdle()
+
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+
+        assertEquals(listOf(tokyo.id), viewModel.uiState.value.settings.recentLocations.map { it.id })
+    }
+
+    @Test
+    fun `selecting a favorite or the home location leaves the history empty`() = withViewModel(
+        initialSettings = LocationSettings(
+            homeLocation = hamburg,
+            favorites = listOf(berlin),
+            selectedLocationId = hamburg.id,
+        ),
+    ) {
+        advanceUntilIdle()
+
+        viewModel.selectSearchedLocation(berlin)
+        advanceUntilIdle()
+        viewModel.selectSearchedLocation(hamburg)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.settings.recentLocations.isEmpty())
+        assertEquals(hamburg.id, viewModel.uiState.value.weather.location?.id)
+    }
+
+    // ---------------------------------------------------------------- favorite star
+
+    @Test
+    fun `the star moves a history entry into the favorites and back again`() = withViewModel {
+        advanceUntilIdle()
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+
+        viewModel.toggleFavorite(tokyo)
+        advanceUntilIdle()
+        var settings = viewModel.uiState.value.settings
+        assertEquals(listOf(tokyo.id), settings.favorites.map { it.id })
+        assertTrue(settings.recentLocations.isEmpty())
+
+        viewModel.toggleFavorite(tokyo)
+        advanceUntilIdle()
+        settings = viewModel.uiState.value.settings
+        assertTrue(settings.favorites.isEmpty())
+        assertEquals(listOf(tokyo.id), settings.recentLocations.map { it.id })
+        // The place the user is looking at stays on screen the whole time.
+        assertEquals(tokyo.id, viewModel.uiState.value.weather.location?.id)
+        assertNotNull(viewModel.uiState.value.weather.current)
+    }
+
+    @Test
+    fun `changing the favorite state never requests the forecast again`() = withViewModel {
+        advanceUntilIdle()
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+        assertEquals(2, forecastApi.callCount)
+
+        viewModel.toggleFavorite(tokyo)
+        advanceUntilIdle()
+        viewModel.toggleFavorite(tokyo)
+        advanceUntilIdle()
+
+        assertEquals(2, forecastApi.callCount)
+    }
+
+    @Test
+    fun `the home location stays saved when its star is tapped`() = withViewModel {
+        advanceUntilIdle()
+
+        viewModel.toggleFavorite(hamburg)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(UserMessage.HOME_LOCATION_PROTECTED, state.message)
+        assertEquals(hamburg.id, state.settings.homeLocation?.id)
+        assertTrue(state.settings.favorites.isEmpty())
+        assertTrue(state.settings.recentLocations.isEmpty())
+        assertEquals(hamburg.id, state.weather.location?.id)
+        assertEquals(1, forecastApi.callCount)
+    }
+
+    @Test
+    fun `unfavouriting the displayed location keeps its forecast in the cache`() = withViewModel {
+        advanceUntilIdle()
+        viewModel.addFavorite(berlin)
+        advanceUntilIdle()
+        viewModel.selectLocation(berlin.id)
+        advanceUntilIdle()
+        assertTrue(cache.entries.containsKey(berlin.id))
+
+        viewModel.toggleFavorite(berlin)
+        advanceUntilIdle()
+
+        assertEquals(berlin.id, viewModel.uiState.value.weather.location?.id)
+        assertTrue("the selected location still needs its forecast", cache.entries.containsKey(berlin.id))
+        assertEquals(listOf(berlin.id), viewModel.uiState.value.settings.recentLocations.map { it.id })
+    }
+
+    // ------------------------------------------------------------------- history
+
+    @Test
+    fun `deleting the displayed history entry falls back to the home location`() = withViewModel {
+        advanceUntilIdle()
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+        assertEquals(tokyo.id, viewModel.uiState.value.weather.location?.id)
+
+        viewModel.removeRecentLocation(tokyo.id)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.settings.recentLocations.isEmpty())
+        assertEquals(hamburg.id, state.weather.location?.id)
+        assertNotNull(state.weather.current)
+        // The forecast of a place nothing refers to any more is dropped with it.
+        assertFalse(cache.entries.containsKey(tokyo.id))
+        assertTrue(cache.entries.containsKey(hamburg.id))
+    }
+
+    @Test
+    fun `clearing the history keeps favorites, the home location and their forecasts`() = withViewModel {
+        advanceUntilIdle()
+        viewModel.addFavorite(berlin)
+        advanceUntilIdle()
+        // Visiting the favourite is what puts its forecast into the cache in the first place.
+        viewModel.selectLocation(berlin.id)
+        advanceUntilIdle()
+        assertTrue(cache.entries.containsKey(berlin.id))
+
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+        viewModel.selectSearchedLocation(paris)
+        advanceUntilIdle()
+        assertEquals(2, viewModel.uiState.value.settings.recentLocations.size)
+
+        viewModel.clearRecentLocations()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.settings.recentLocations.isEmpty())
+        assertEquals(hamburg.id, state.settings.homeLocation?.id)
+        assertEquals(listOf(berlin.id), state.settings.favorites.map { it.id })
+        assertEquals(UserMessage.HISTORY_CLEARED, state.message)
+        // The favourite and the home location keep their forecasts; only the two history places
+        // lose theirs, because nothing refers to them any more.
+        assertTrue(cache.entries.containsKey(berlin.id))
+        assertTrue(cache.entries.containsKey(hamburg.id))
+        assertFalse(cache.entries.containsKey(tokyo.id))
+        assertFalse(cache.entries.containsKey(paris.id))
+    }
+
+    @Test
+    fun `clearing the history while one of its places is shown selects the home location`() = withViewModel {
+        advanceUntilIdle()
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+
+        viewModel.clearRecentLocations()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(hamburg.id, state.weather.location?.id)
+        assertEquals(hamburg.id, state.settings.selectedLocationId)
+        assertNotNull(state.weather.current)
+    }
+
+    @Test
+    fun `opening the location manager and browsing history adds no extra request`() = withViewModel(
+        initialSettings = LocationSettings(
+            homeLocation = hamburg,
+            favorites = listOf(berlin),
+            recentLocations = listOf(tokyo),
+            selectedLocationId = hamburg.id,
+        ),
+    ) {
+        advanceUntilIdle()
+        assertEquals(1, forecastApi.callCount)
+
+        // Selecting the home location again is a no-op for the weather.
+        viewModel.selectLocation(hamburg.id)
+        advanceUntilIdle()
+        assertEquals(1, forecastApi.callCount)
+
+        // Re-ranking a history entry does not reload either.
+        viewModel.selectLocation(tokyo.id)
+        advanceUntilIdle()
+        assertEquals(2, forecastApi.callCount)
+        assertEquals(tokyo.id, viewModel.uiState.value.weather.location?.id)
+        assertEquals(listOf(tokyo.id), viewModel.uiState.value.settings.recentLocations.map { it.id })
+
+        viewModel.selectLocation(hamburg.id)
+        advanceUntilIdle()
+        // Hamburg was cached by the very first load, so coming back needs no new call.
+        assertEquals(2, forecastApi.callCount)
+    }
+
+    @Test
+    fun `switching quickly between locations never shows the wrong forecast`() = withViewModel(
+        initialSettings = LocationSettings(
+            homeLocation = hamburg,
+            favorites = listOf(berlin),
+            selectedLocationId = hamburg.id,
+        ),
+        gate = CompletableDeferred(),
+    ) {
+        val berlinPayload = sampleForecastDto().copy(
+            current = sampleForecastDto().current?.copy(temperature = -2.0, weatherCode = 71),
+        )
+        forecastApi.payloadsByCoordinate[hamburg.latitude to hamburg.longitude] = sampleForecastDto()
+        forecastApi.payloadsByCoordinate[berlin.latitude to berlin.longitude] = berlinPayload
+
+        advanceUntilIdle()
+        assertEquals(1, forecastApi.callCount)
+
+        // Two selections in a row while the first response is still on its way.
+        viewModel.selectLocation(berlin.id)
+        runCurrent()
+        viewModel.selectSearchedLocation(tokyo)
+        runCurrent()
+        forecastApi.gate?.complete(Unit)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(tokyo.id, state.weather.location?.id)
+        assertEquals(
+            "the values on screen must belong to the location named above them",
+            6.4,
+            requireNotNull(state.weather.current).temperatureCelsius,
+            0.0001,
+        )
     }
 }

@@ -31,6 +31,13 @@ val OnHeader = Color(0xFFFFFFFF)
 val OnHeaderMuted = Color(0xCCFFFFFF)
 
 /**
+ * Warm accent of a filled favorite star. The star sits on the coloured header gradient in both
+ * app themes, so the colour is a fixed warm gold rather than a scheme colour: it stays clearly
+ * lighter than every header tone while remaining unmistakably "saved" rather than "warning".
+ */
+val FavoriteStarGold = Color(0xFFFFC85C)
+
+/**
  * Colour of the storm wind indicator. It is deliberately a clear red in both themes rather than
  * the scheme's error colour, whose dark variant is a pale red that would not read as a warning.
  * The neutral strong-wind indicator uses [OnSurfaceVariantLight] and [OnSurfaceVariantDark].

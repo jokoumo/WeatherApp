@@ -72,6 +72,7 @@ fun DashboardScreen(
     onRefresh: () -> Unit,
     onOpenLocations: () -> Unit,
     onOpenSettings: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -162,6 +163,9 @@ fun DashboardScreen(
                         else -> WeatherContent(
                             location = location,
                             weather = weather,
+                            isFavorite = state.displayedLocationIsFavorite,
+                            isHomeLocation = state.displayedLocationIsHome,
+                            onToggleFavorite = onToggleFavorite,
                             onHourClick = { selectedEntry = it },
                             onDayClick = { selectedDay = it },
                         )
@@ -195,6 +199,9 @@ fun DashboardScreen(
 private fun WeatherContent(
     location: SavedLocation,
     weather: WeatherUiState,
+    isFavorite: Boolean,
+    isHomeLocation: Boolean,
+    onToggleFavorite: () -> Unit,
     onHourClick: (HourlyWindowEntry) -> Unit,
     onDayClick: (LocalDate) -> Unit,
 ) {
@@ -208,6 +215,9 @@ private fun WeatherContent(
         todayMax = weather.todayMax,
         dataInstant = weather.displayInstant,
         zoneId = zone ?: java.time.ZoneId.systemDefault(),
+        isFavorite = isFavorite,
+        isHomeLocation = isHomeLocation,
+        onToggleFavorite = onToggleFavorite,
     )
 
     Column(

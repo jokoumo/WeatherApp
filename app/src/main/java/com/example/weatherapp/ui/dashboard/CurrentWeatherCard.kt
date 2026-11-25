@@ -8,17 +8,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -30,6 +36,7 @@ import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.domain.model.WindWarning
 import com.example.weatherapp.ui.components.StackedDetail
 import com.example.weatherapp.ui.components.WeatherIcon
+import com.example.weatherapp.ui.theme.FavoriteStarGold
 import com.example.weatherapp.ui.theme.HeaderWindIndicatorColors
 import com.example.weatherapp.ui.theme.OnHeader
 import com.example.weatherapp.ui.theme.OnHeaderMuted
@@ -44,6 +51,9 @@ import java.time.ZoneId
  *
  * [dataInstant] is null when the API did not report a usable observation time. The card then
  * states that instead of showing a time that was never measured.
+ *
+ * The favorite star sits in the same line as the location name, so it clearly belongs to the
+ * place and not to the weather symbol next to it.
  */
 @Composable
 fun CurrentWeatherCard(
@@ -53,6 +63,9 @@ fun CurrentWeatherCard(
     todayMax: Double?,
     dataInstant: Instant?,
     zoneId: ZoneId,
+    isFavorite: Boolean,
+    isHomeLocation: Boolean,
+    onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val condition = current?.condition
@@ -71,13 +84,22 @@ fun CurrentWeatherCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = location.name,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = OnHeader,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = location.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = OnHeader,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        FavoriteStarButton(
+                            isFavorite = isFavorite || isHomeLocation,
+                            isHomeLocation = isHomeLocation,
+                            onToggleFavorite = onToggleFavorite,
+                        )
+                    }
                     val region = listOfNotNull(location.admin1, location.country)
                         .filter { it.isNotBlank() }
                         .joinToString(", ")
@@ -181,6 +203,43 @@ fun CurrentWeatherCard(
                     secondValue = WeatherFormatter.pressure(current?.pressureHectopascal),
                 )
             }
+        }
+    }
+}
+
+/**
+ * Star of the location currently shown.
+ *
+ * A filled star in the warm accent colour means "saved", an outlined one means "not saved yet".
+ * The home location is always saved, so its star is filled too; tapping it does not remove
+ * anything, and the accessibility label says so instead of promising an action that never happens.
+ */
+@Composable
+private fun FavoriteStarButton(
+    isFavorite: Boolean,
+    isHomeLocation: Boolean,
+    onToggleFavorite: () -> Unit,
+) {
+    val label = when {
+        isHomeLocation -> stringResource(R.string.content_description_star_home)
+        isFavorite -> stringResource(R.string.action_remove_favorite)
+        else -> stringResource(R.string.action_add_favorite)
+    }
+    IconButton(onClick = onToggleFavorite, modifier = Modifier.size(48.dp)) {
+        if (isFavorite) {
+            Icon(
+                imageVector = Icons.Default.Star,
+                contentDescription = label,
+                tint = FavoriteStarGold,
+                modifier = Modifier.size(26.dp),
+            )
+        } else {
+            Icon(
+                painter = painterResource(R.drawable.ic_star_outline),
+                contentDescription = label,
+                tint = OnHeader,
+                modifier = Modifier.size(26.dp),
+            )
         }
     }
 }

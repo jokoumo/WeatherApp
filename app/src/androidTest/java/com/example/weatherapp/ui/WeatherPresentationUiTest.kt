@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -175,6 +176,9 @@ class WeatherPresentationUiTest {
                     todayMax = 7.0,
                     dataInstant = Instant.parse("2026-11-22T11:00:00Z"),
                     zoneId = zone,
+                    isFavorite = true,
+                    isHomeLocation = false,
+                    onToggleFavorite = {},
                     modifier = Modifier.testTag("hero"),
                 )
             }
@@ -207,6 +211,92 @@ class WeatherPresentationUiTest {
         assertTrue(
             "the humidity label overlaps the precipitation column",
             humidity.right <= precipitation.left,
+        )
+    }
+
+    /**
+     * The star of the hero card speaks the role of the place it belongs to: an outlined star that
+     * offers saving, a filled star that offers removing, and a separate label for the home location,
+     * which is always saved.
+     */
+    @Test
+    fun theFavoriteStarDescribesTheRoleOfTheDisplayedLocation() {
+        var isFavorite by mutableStateOf(false)
+        var isHome by mutableStateOf(false)
+        var taps = 0
+        composeRule.setContent {
+            WeatherAppTheme {
+                CurrentWeatherCard(
+                    location = hamburg,
+                    current = current(),
+                    todayMin = null,
+                    todayMax = null,
+                    dataInstant = null,
+                    zoneId = zone,
+                    isFavorite = isFavorite,
+                    isHomeLocation = isHome,
+                    onToggleFavorite = { taps++ },
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_add_favorite))
+            .assertIsDisplayed()
+
+        isFavorite = true
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_remove_favorite))
+            .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_add_favorite))
+            .assertDoesNotExist()
+
+        isHome = true
+        composeRule.waitForIdle()
+        val homeLabel = context.getString(R.string.content_description_star_home)
+        composeRule.onNodeWithContentDescription(homeLabel).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.action_remove_favorite))
+            .assertDoesNotExist()
+
+        composeRule.onNodeWithContentDescription(homeLabel).performClick()
+        assertEquals("the star is a button of its own", 1, taps)
+    }
+
+    /** The star belongs to the place, so it shares the line of the location name. */
+    @Test
+    fun theFavoriteStarSharesTheLineOfTheLocationName() {
+        composeRule.setContent {
+            WeatherAppTheme {
+                CurrentWeatherCard(
+                    location = hamburg,
+                    current = current(),
+                    todayMin = null,
+                    todayMax = null,
+                    dataInstant = null,
+                    zoneId = zone,
+                    isFavorite = false,
+                    isHomeLocation = false,
+                    onToggleFavorite = {},
+                )
+            }
+        }
+
+        val name = composeRule.onNodeWithText(hamburg.name).fetchSemanticsNode().boundsInWindow
+        val star = composeRule
+            .onNodeWithContentDescription(context.getString(R.string.action_add_favorite))
+            .fetchSemanticsNode()
+            .boundsInWindow
+
+        assertTrue("the star is not to the right of the name", star.left >= name.right - 1f)
+        val nameCentre = (name.top + name.bottom) / 2f
+        val starCentre = (star.top + star.bottom) / 2f
+        assertTrue(
+            "the star is on another line: name $nameCentre, star $starCentre",
+            kotlin.math.abs(nameCentre - starCentre) < 20f,
+        )
+        val minTouchTarget = 48f * context.resources.displayMetrics.density
+        assertTrue(
+            "the star touch target ${star.width}x${star.height} is smaller than 48 dp",
+            star.width >= minTouchTarget && star.height >= minTouchTarget,
         )
     }
 
@@ -310,6 +400,9 @@ class WeatherPresentationUiTest {
                         todayMax = null,
                         dataInstant = null,
                         zoneId = zone,
+                        isFavorite = false,
+                        isHomeLocation = false,
+                        onToggleFavorite = {},
                     )
                 }
             }

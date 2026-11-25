@@ -31,7 +31,10 @@ import java.time.ZoneId
 enum class UserMessage {
     LOCATION_ADDED,
     LOCATION_DUPLICATE,
+    LOCATION_REMOVED_FROM_FAVORITES,
     HOME_LOCATION_SET,
+    HOME_LOCATION_PROTECTED,
+    HISTORY_CLEARED,
 }
 
 /** German snackbar text for a [UserMessage]. */
@@ -39,7 +42,10 @@ enum class UserMessage {
 fun UserMessage.messageRes(): Int = when (this) {
     UserMessage.LOCATION_ADDED -> R.string.message_location_added
     UserMessage.LOCATION_DUPLICATE -> R.string.message_location_duplicate
+    UserMessage.LOCATION_REMOVED_FROM_FAVORITES -> R.string.message_location_unfavorited
     UserMessage.HOME_LOCATION_SET -> R.string.message_home_location_set
+    UserMessage.HOME_LOCATION_PROTECTED -> R.string.message_home_location_protected
+    UserMessage.HISTORY_CLEARED -> R.string.message_history_cleared
 }
 
 /** Weather state of the location that is currently displayed. */
@@ -106,6 +112,24 @@ data class MainUiState(
     /** True while the dashboard has no data at all and is still loading. */
     val isInitialLoading: Boolean
         get() = settingsLoaded && settings.hasAnyLocation && !weather.hasData && weather.isRefreshing
+
+    /**
+     * Star state of the location shown on the dashboard.
+     *
+     * The home location counts as saved as well, so its star is filled too; [isHomeLocation]
+     * tells the UI why, and the star of that location cannot be switched off.
+     */
+    val displayedLocationIsFavorite: Boolean
+        get() = displayedLocationId?.let { settings.isFavorite(it) } ?: false
+
+    val displayedLocationIsHome: Boolean
+        get() = displayedLocationId?.let { settings.isHomeLocation(it) } ?: false
+
+    val displayedLocationIsRecent: Boolean
+        get() = displayedLocationId?.let { settings.isRecent(it) } ?: false
+
+    private val displayedLocationId: String?
+        get() = weather.location?.id ?: settings.resolveSelectedLocation()?.id
 }
 
 /**
@@ -224,6 +248,31 @@ class MainViewModel(
         }
     }
 
+    /**
+     * Toggles the star of [location].
+     *
+     * Adding a favorite takes the place out of the history; removing one puts it there, which is
+     * why the location stays selected and its weather stays on screen. The home location is
+     * deliberately not switchable through the star: tapping it only explains that it is always
+     * saved, so the star never appears to change without any effect.
+     */
+    fun toggleFavorite(location: SavedLocation) {
+        val settings = _uiState.value.settings
+        if (settings.isHomeLocation(location.id)) {
+            _uiState.update { it.copy(message = UserMessage.HOME_LOCATION_PROTECTED) }
+            return
+        }
+        viewModelScope.launch {
+            if (settings.isFavorite(location.id)) {
+                locationRepository.removeFavorite(location.id)
+                _uiState.update { it.copy(message = UserMessage.LOCATION_REMOVED_FROM_FAVORITES) }
+            } else {
+                locationRepository.addFavorite(location)
+                _uiState.update { it.copy(message = UserMessage.LOCATION_ADDED) }
+            }
+        }
+    }
+
     fun addFavorite(location: SavedLocation) {
         viewModelScope.launch {
             val added = locationRepository.addFavorite(location)
@@ -235,12 +284,39 @@ class MainViewModel(
         }
     }
 
+    /**
+     * Shows the location of a tapped search suggestion.
+     *
+     * The repository selects it and remembers it in the history; nothing is added to the favorites,
+     * so browsing a place never saves it.
+     */
+    fun selectSearchedLocation(location: SavedLocation) {
+        clearSearch()
+        viewModelScope.launch { locationRepository.selectLocation(location) }
+    }
+
+    /** Removes one entry from the history. */
+    fun removeRecentLocation(locationId: String) {
+        viewModelScope.launch {
+            locationRepository.removeRecentLocation(locationId)
+            dropCacheIfNoLongerNeeded(locationId)
+        }
+    }
+
+    /** Empties the history; favorites, the home location and the appearance stay untouched. */
+    fun clearRecentLocations() {
+        viewModelScope.launch {
+            val removedIds = _uiState.value.settings.recentLocations.map { it.id }
+            locationRepository.clearRecentLocations()
+            removedIds.forEach { id -> dropCacheIfNoLongerNeeded(id) }
+            _uiState.update { it.copy(message = UserMessage.HISTORY_CLEARED) }
+        }
+    }
+
     fun removeLocation(locationId: String) {
         viewModelScope.launch {
             locationRepository.removeLocation(locationId)
-            // The forecast cache is keyed by location id. After the location is gone its entry can
-            // never be read again, so it is dropped instead of staying in the database forever.
-            weatherRepository.dropCache(locationId)
+            dropCacheIfNoLongerNeeded(locationId)
         }
     }
 
@@ -331,6 +407,20 @@ class MainViewModel(
     private fun isStillSelected(location: SavedLocation): Boolean =
         _uiState.value.weather.location?.id == location.id &&
             _uiState.value.settings.resolveSelectedLocation()?.id == location.id
+
+    /**
+     * Drops the cached forecast of [locationId] only after the settings say that no role refers to
+     * it any more.
+     *
+     * The cache is keyed by location id, so a row of a place nobody keeps can never be read again
+     * and would stay in the database forever. A place that merely lost its favorite status, on the
+     * other hand, is still selected or still sits in the history: its forecast stays, which is what
+     * keeps the dashboard responsive and the app usable offline.
+     */
+    private suspend fun dropCacheIfNoLongerNeeded(locationId: String) {
+        if (locationRepository.currentSettings().selectableLocations.any { it.id == locationId }) return
+        weatherRepository.dropCache(locationId)
+    }
 
     /**
      * Silently refreshes a snapshot that stopped being valid because the location's calendar day

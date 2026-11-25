@@ -24,11 +24,20 @@ data class LocationSearchResult(
 }
 
 /**
- * Owns all location related state: home location, ordered favorites and the selected
- * location, and performs location search against the Open-Meteo geocoding API.
+ * Owns all location related state - the home location, the ordered favorites, the recent
+ * locations history and the selected location - and performs location search against the
+ * Open-Meteo geocoding API.
  *
- * Mutations are serialised with a mutex so that rapid user actions cannot overwrite each
- * other.
+ * Every rule that keeps the three roles consistent lives here, so no composable has to combine
+ * several operations itself. The central invariants are:
+ *
+ * - a location is home, favorite or recent, never two of them at the same time;
+ * - the history is sorted by most recent use, holds no duplicates and never grows past
+ *   [LocationSettings.MAX_RECENT_LOCATIONS];
+ * - the favorites keep the order the user gave them;
+ * - identity is decided by [isSamePlaceAs], never by the display name.
+ *
+ * Mutations are serialised with a mutex so that rapid user actions cannot overwrite each other.
  */
 class LocationRepository(
     private val settingsStore: SettingsStore,
@@ -67,9 +76,10 @@ class LocationRepository(
      *
      * The previous home location is never dropped: when [location] was a favorite, the two swap,
      * so the previous home takes over the exact slot the new home held in the favorites list.
-     * A copy of [location] that survived in an older persisted state is removed from the other
-     * slot, which keeps the number of distinct saved locations unchanged and never duplicates a
-     * place. Identity is decided by [isSamePlaceAs], not by the display name.
+     * When [location] came from the history it becomes the home location and its history entry
+     * disappears. A copy of [location] that survived in an older persisted state is removed from
+     * the other slots, which keeps the number of distinct saved locations unchanged and never
+     * duplicates a place. Identity is decided by [isSamePlaceAs], not by the display name.
      */
     suspend fun setHomeLocation(location: SavedLocation): LocationSettings = mutate { current ->
         val previousHome = current.homeLocation
@@ -89,6 +99,11 @@ class LocationRepository(
         current.copy(
             homeLocation = location,
             favorites = favorites,
+            // The new home is no longer a history entry, and neither is the previous home, which
+            // has just become a regular favorite.
+            recentLocations = current.recentLocations
+                .filterNot { it.isSamePlaceAs(location) }
+                .filterNot { other -> previousHome != null && other.isSamePlaceAs(previousHome) },
             // This is an explicit user action, so the new home location is what the dashboard has
             // to show afterwards - [keepValidSelection] must not restore the old selection here.
             selectedLocationId = location.id,
@@ -96,34 +111,62 @@ class LocationRepository(
     }
 
     /**
-     * Adds [location] to the favorites.
+     * Adds [location] to the favorites, keeping the existing order of the others.
+     *
+     * A history entry of the same place is removed: a location is favorite or recent, never both.
      *
      * @return false when the location is already stored as home location or favorite.
      */
     suspend fun addFavorite(location: SavedLocation): Boolean {
         var added = false
         mutate { current ->
-            if (current.selectableLocations.any { it.isSamePlaceAs(location) }) {
+            val stored = current.selectableLocations.firstOrNull { it.isSamePlaceAs(location) } ?: location
+            if (current.savedLocations.any { it.isSamePlaceAs(stored) }) {
                 current
             } else {
                 added = true
-                current.copy(favorites = current.favorites + location)
+                current.copy(
+                    favorites = current.favorites + stored,
+                    recentLocations = current.recentLocations.filterNot { it.isSamePlaceAs(stored) },
+                )
             }
         }
         return added
     }
 
+    /**
+     * Removes a location from the favorites.
+     *
+     * The place is not forgotten: it moves to the top of the history, so the location the user is
+     * looking at stays available and stays selected.
+     */
     suspend fun removeFavorite(locationId: String): LocationSettings = mutate { current ->
-        val updated = current.copy(favorites = current.favorites.filterNot { it.id == locationId })
+        val favorite = current.favorites.firstOrNull { it.id == locationId } ?: return@mutate current
+        val updated = current.copy(
+            favorites = current.favorites.filterNot { it.id == locationId },
+            recentLocations = promoteInHistory(current.recentLocations, favorite),
+        )
         updated.copy(selectedLocationId = keepValidSelection(current, updated))
     }
 
-    /** Removes a location from favorites or clears the home location. */
+    /**
+     * Removes a location from favorites or clears the home location.
+     *
+     * This is the only way a place leaves the app completely, so it is also dropped from the
+     * history. Un-favouriting on its own goes through [removeFavorite] and keeps the place.
+     */
     suspend fun removeLocation(locationId: String): LocationSettings = mutate { current ->
-        val updated = if (current.homeLocation?.id == locationId) {
-            current.copy(homeLocation = null)
-        } else {
-            current.copy(favorites = current.favorites.filterNot { it.id == locationId })
+        val updated = when {
+            current.homeLocation?.id == locationId -> current.copy(
+                homeLocation = null,
+                favorites = current.favorites.filterNot { it.id == locationId },
+                recentLocations = current.recentLocations.filterNot { it.id == locationId },
+            )
+
+            else -> current.copy(
+                favorites = current.favorites.filterNot { it.id == locationId },
+                recentLocations = current.recentLocations.filterNot { it.id == locationId },
+            )
         }
         updated.copy(selectedLocationId = keepValidSelection(current, updated))
     }
@@ -143,13 +186,58 @@ class LocationRepository(
         current.copy(favorites = favorites)
     }
 
-    /** Selects an already stored location. Unknown ids are ignored. */
+    /**
+     * Displays an already stored location. Unknown ids are ignored.
+     *
+     * Choosing a history entry again counts as using it, so that entry moves to the top of the
+     * history; favorites and the home location stay where they are.
+     */
     suspend fun selectLocation(locationId: String): LocationSettings = mutate { current ->
-        if (current.selectableLocations.any { it.id == locationId }) {
-            current.copy(selectedLocationId = locationId)
-        } else {
-            current
-        }
+        val location = current.selectableLocations.firstOrNull { it.id == locationId }
+            ?: return@mutate current
+        val isRecent = current.recentLocations.any { it.id == locationId }
+        current.copy(
+            selectedLocationId = locationId,
+            recentLocations = if (isRecent) {
+                promoteInHistory(current.recentLocations, location)
+            } else {
+                current.recentLocations
+            },
+        )
+    }
+
+    /**
+     * Displays [location] without saving it, which is what tapping a search suggestion does.
+     *
+     * A place that is already a favorite or the home location is selected as it is stored, so no
+     * second entry for the same coordinates appears. Anything else is remembered in the history
+     * only - viewing a location never makes it a favorite.
+     */
+    suspend fun selectLocation(location: SavedLocation): LocationSettings = mutate { current ->
+        val stored = current.selectableLocations.firstOrNull { it.isSamePlaceAs(location) } ?: location
+        val isSaved = current.savedLocations.any { it.isSamePlaceAs(stored) }
+        current.copy(
+            recentLocations = if (isSaved) {
+                current.recentLocations.filterNot { it.isSamePlaceAs(stored) }
+            } else {
+                promoteInHistory(current.recentLocations, stored)
+            },
+            selectedLocationId = stored.id,
+        )
+    }
+
+    /** Drops a single history entry. Favorites and the home location are untouched. */
+    suspend fun removeRecentLocation(locationId: String): LocationSettings = mutate { current ->
+        if (current.recentLocations.none { it.id == locationId }) return@mutate current
+        val updated = current.copy(recentLocations = current.recentLocations.filterNot { it.id == locationId })
+        updated.copy(selectedLocationId = keepValidSelection(current, updated))
+    }
+
+    /** Empties the history. Favorites, the home location and every other preference stay as they are. */
+    suspend fun clearRecentLocations(): LocationSettings = mutate { current ->
+        if (current.recentLocations.isEmpty()) return@mutate current
+        val updated = current.copy(recentLocations = emptyList())
+        updated.copy(selectedLocationId = keepValidSelection(current, updated))
     }
 
     /**
@@ -167,6 +255,17 @@ class LocationRepository(
         }
         updated
     }
+
+    /**
+     * Puts [location] at the front of the history: duplicates of the same place are removed first,
+     * and the least recently used entry falls off once the maximum size is exceeded.
+     */
+    private fun promoteInHistory(
+        history: List<SavedLocation>,
+        location: SavedLocation,
+    ): List<SavedLocation> =
+        (listOf(location) + history.filterNot { it.isSamePlaceAs(location) })
+            .take(LocationSettings.MAX_RECENT_LOCATIONS)
 
     /** Keeps the current selection when it still exists, otherwise falls back to home. */
     private fun keepValidSelection(

@@ -103,7 +103,8 @@ fun LocationSearchResults(
 }
 
 /**
- * One location row: name, region line and an optional trailing action area.
+ * One location row: an optional leading role marker, name, region line and an optional trailing
+ * action area.
  *
  * [trailingReserve] declares how much width the action buttons need. If the row is too narrow to
  * keep a readable amount of text next to them - small screens, long names or a large system font
@@ -117,6 +118,7 @@ fun LocationListItem(
     modifier: Modifier = Modifier,
     isSelected: Boolean = false,
     selectedLabel: String? = null,
+    leading: @Composable () -> Unit = {},
     trailing: @Composable () -> Unit = {},
     trailingReserve: Dp? = null,
 ) {
@@ -130,7 +132,12 @@ fun LocationListItem(
         val actionsBelowText = trailingReserve != null && maxWidth - trailingReserve < minTextWidth
         if (actionsBelowText) {
             Column {
-                LocationText(location = location, isSelected = isSelected, selectedLabel = selectedLabel)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    leading()
+                    Column(modifier = Modifier.weight(1f)) {
+                        LocationText(location = location, isSelected = isSelected, selectedLabel = selectedLabel)
+                    }
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -141,6 +148,7 @@ fun LocationListItem(
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                leading()
                 Column(modifier = Modifier.weight(1f)) {
                     LocationText(location = location, isSelected = isSelected, selectedLabel = selectedLabel)
                 }

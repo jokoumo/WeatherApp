@@ -38,6 +38,14 @@ Use the existing Gradle Wrapper and compatible stable dependency versions.
 
 Do not change the application's package name or application ID without explicit authorization.
 
+Version the application in `app/build.gradle.kts` with semantic versioning:
+
+- Increase MAJOR for incompatible behaviour or for a stored data format that older builds cannot read.
+- Increase MINOR when user-facing functionality is added while existing behaviour and stored data stay compatible.
+- Increase PATCH for fixes only.
+- `versionName` and `versionCode` change together, and `versionCode` only ever increases, by one per published build.
+- Describe the user-facing changes of every version in the README.
+
 Avoid deprecated Android APIs whenever supported alternatives are available.
 
 ## 3. Code Organization

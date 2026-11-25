@@ -152,8 +152,14 @@ class PrivacyScreenTest {
         assertTrue("analytics libraries are denied", tracking.contains("Analyse"))
 
         val local = context.getString(R.string.privacy_local_body)
-        listOf("Startort", "Favoriten", "Reihenfolge", "Darstellung").forEach { term ->
+        listOf("Hauptstandort", "Favoriten", "Reihenfolge", "Verlauf", "Darstellung").forEach { term ->
             assertTrue("stored data mentions $term", local.contains(term))
+        }
+        listOf("Hauptstandort", "Verlauf").forEach { term ->
+            assertTrue(
+                "the stored data list names $term",
+                context.resources.getStringArray(R.array.privacy_local_items).any { it.contains(term) },
+            )
         }
 
         // The provider notice links to the official terms and privacy page of Open-Meteo.
