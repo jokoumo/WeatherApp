@@ -27,6 +27,7 @@ All user-visible text is German; source code, comments and this documentation ar
 | Settings and information | A settings screen with three entries in this order ("Darstellung", "Datenschutz", "Infos"), the appearance page described above, and an information page with the installed version and build number, the weather services behind the data with their links, and the licences of the data and of the shipped libraries — readable offline, with the full licence text opening in the browser. |
 | Privacy and backup | A dedicated **Datenschutz** screen (settings → privacy) describing what the app stores, what it sends to the weather service and how backups are handled, with a link to the weather service's own terms and privacy notice. Home location, favourites, ordering, selected location and appearance are eligible for the Android backup; the forecast cache and its database side files are excluded because they can be fetched again (see [Privacy, local storage and backup](#privacy-local-storage-and-backup)). |
 | Launcher icon | A custom adaptive icon (warm sun with a soft cloud over it on a deep blue field) with a monochrome layer for themed icons; no template artwork and no bitmaps, so it renders from the same vector on every density. |
+| Home-screen widgets | Three Glance widgets — **Aktuelles Wetter** (current conditions plus up to nine information tiles), **Tagesverlauf** (four rolling day periods) and **3-Tage-Vorschau** (heute / morgen / übermorgen). Every instance is configured separately with **Hauptstandort**, **Aktueller Ort** or **Fester Ort**, all three sizes adapt to the space the launcher offers, light and dark follow the system, and a tap opens the app at the widget's location. Updates come from one shared WorkManager schedule and the app's own cache policy — no extra permission, no foreground service, no second API (see [Home-screen widgets](#home-screen-widgets)). |
 
 ## Data source
 
@@ -473,10 +474,189 @@ decodes to `SYSTEM` rather than failing.
 - The theme changes nothing else: it never touches the saved locations and never reloads the
   weather (asserted by `AppearanceViewModelTest`).
 
+## Home-screen widgets
+
+Three Glance widgets (`androidx.glance:glance-appwidget`) ship with the app. They are added from the
+launcher's widget picker, every one of them opens the same configuration screen when it is placed,
+and each **instance** has its own location: two "Aktuelles Wetter" widgets can sit next to each other
+and show two different places. Nothing about the widgets changes the dashboard — they read the same
+repository, the same cache and the same cache policy that the app itself uses.
+
+| Widget | Classes | Content |
+| --- | --- | --- |
+| **WetterPlus – Aktuelles Wetter** | `widget/CurrentWeatherWidget`, `CurrentWeatherWidgetReceiver` | Location, current temperature, condition with the Flat Color symbol (including the wind marker), feels-like temperature, and a grid of information tiles: today's min/max, humidity, **precipitation probability of the current hour**, precipitation amount, wind speed, gusts, pressure, cloud cover and wind direction. |
+| **WetterPlus – Tagesverlauf** | `widget/DayPeriodWidget`, `DayPeriodWidgetReceiver` | Four consecutive day periods — Vormittag, Nachmittag, Abend, Nacht — starting with the period that contains the local time at the widget's location, so the row always reads "the rest of today and what comes next". |
+| **WetterPlus – 3-Tage-Vorschau** | `widget/ThreeDayWidget`, `ThreeDayWidgetReceiver` | Heute, Morgen and Übermorgen with the daily min/max, the day's condition symbol and its precipitation, taken from the daily block of the same response the dashboard uses. |
+
+Every value a widget prints goes through the app's own aggregation and formatting code:
+`buildDayPeriodForecast`, `WeatherFormatter`, `shortDescriptionRes`/`weatherIconRes` and
+`WindWarningClassifier`. A widget therefore never shows a number the app would not show, and a missing
+value stays the en dash of the app instead of a zero.
+
+### Responsive sizes
+
+Each widget declares three sizes with `SizeMode.Responsive`; Glance composes the layout once per
+declared size and the launcher picks the one that fits the space it really offers, so resizing a
+widget switches the layout instead of scaling one. `widget/presentation/WidgetSize.kt` holds the
+declared sizes and the rule that turns the composed size into a `WidgetSizeClass`:
+
+| Widget | Offered sizes (dp) | Compact | Medium | Expanded |
+| --- | --- | --- | --- | --- |
+| Aktuelles Wetter | 140×100, 250×165, 320×250 | temperature, condition, symbol, two headline values | header + 4 tiles | header + 3×3 tiles (all nine metrics) |
+| Tagesverlauf | 170×110, 260×170, 320×250 | four lines: period, day, symbol, range | 2×2 cards with one precipitation line | 2×2 cards with max. probability, precipitation and gusts |
+| 3-Tage-Vorschau | 170×110, 260×160, 320×210 | three rows with symbol and range | three rows plus precipitation | three rows with a wider range and precipitation |
+
+Below 200 dp width or 130 dp height the compact layout is used; the grid layout needs both 300 dp
+width and 200 dp height. `WidgetSizesTest` asserts that every offered size of every widget lands in
+the layout it was designed for. The same rule decides the tile count: `tileCountFor` returns 0, 4 or
+9, and `buildCurrentWidgetContent` only fills a tile whose value the response actually reports — a
+metric that is missing simply is not shown rather than replaced by a dash.
+
+The nine tiles are preferred in the order above, which is why the medium widget shows the day's range,
+humidity, precipitation probability and precipitation: dropping a metric shifts the later ones up
+instead of leaving a hole.
+
+Glance composes the layout for the **largest declared size that fits the cell the launcher reports**,
+which is what the declared sizes are for: on the API 37 phone emulator (85 dp launcher cells) a
+373 × 210 dp cell composes the 250 × 165 dp medium layout, and a 373 × 321 dp cell the 320 × 250 dp
+expanded one. The provider metadata in `res/xml/widget_*.xml` therefore declares a default cell span
+of **3 × 2** (`targetCellWidth` / `targetCellHeight`, so a freshly dropped widget already shows the
+medium layout), the `minWidth` / `minHeight` of the smallest layout, and a resize cap of
+**400 × 340 dp**: a cap below three launcher cell rows (≈ 315 dp on that emulator) would make the
+largest layout unreachable. `updatePeriodMillis` is `0` — the refresh interval is WorkManager's
+decision, not the App Widget framework's — and the initial layout is Glance's loading placeholder.
+A composition that cannot be tied to a configuration of its own repeats that loading line rather than
+claiming "Kein Ort eingestellt"; the reason is explained at the end of
+[Which location a widget instance shows](#which-location-a-widget-instance-shows).
+
+### Which location a widget instance shows
+
+The configuration screen (`.widget.WidgetConfigurationActivity`, opened by the launcher through
+`APPWIDGET_CONFIGURE`) offers three modes, and the choice belongs to that one widget instance:
+
+| Mode | Behaviour |
+| --- | --- |
+| **Hauptstandort** | Follows the app's home location. If the app has none, the screen points that out and the widget shows its own note until the user sets one — the widget is still placeable, because the mode becomes meaningful as soon as the app has a home location. |
+| **Aktueller Ort** | Follows the location the app currently has selected, exactly as the dashboard resolves it. |
+| **Fester Ort** | Stays on one place chosen for this instance — from the stored locations or from a search. The whole location (name, coordinates, country, time zone) is stored in the widget's own record, so the widget keeps working after the place left the favourites and the history. |
+
+Configurations are keyed by the Android App Widget id in a **second** DataStore file,
+`files/datastore/widget-configurations.preferences_pb` (`widget/WidgetConfigStore`, one JSON list
+under the key `widget_configurations`). Deleting a widget removes its entry — the Glance widget's
+`onDelete` calls `WidgetConfigRepository.remove` — and a start-up pass (`pruneStaleConfigurations`,
+also triggered by `ACTION_MY_PACKAGE_REPLACED`) drops entries whose widget id no longer exists. A
+preferences value that cannot be read decodes to "no configurations" and an entry with an unknown
+mode is dropped, so a damaged file never takes the widgets down (`WidgetConfigStoreTest`).
+
+The result contract is honoured: the activity sets `RESULT_CANCELED` before any content exists, so
+finishing without confirming — back button, crash, or a Cancel tap — leaves nothing configured and
+Android removes the widget again. Only a confirmed save writes the entry and answers `RESULT_OK`.
+
+A confirmed save also asks for an **immediate redraw** (`WidgetRefreshCoordinator.onWidgetConfigured`):
+it schedules the periodic job, enqueues the one-time refresh — without the "are there any widgets" check
+that every other refresh path performs, because the launcher has not bound the new id at that moment
+(`aJustConfiguredWidgetIsRefreshedWithoutBeingListedYet`) — and then draws that one instance from the
+coordinator's own scope, since the configuration screen closes as soon as it has saved and its scope ends
+with it. Which widget type an id belongs to is read back from the App Widget service
+(`WidgetRegistry.widgetFor`), so a single instance is redrawn instead of every widget on the device.
+
+How quickly that first instance actually changes on screen is the one part of this flow that is not fully
+in the app's hands, and it behaved differently on the tested launcher than the code intends: the Pixel
+launcher composes a new widget **before** the configuration screen has confirmed anything, and on that
+composition Glance cannot tie it to an App Widget id. Because nothing is known about such an instance, the
+widget shows "Wetterdaten werden geladen …" rather than "Kein Ort eingestellt" — a composition that has no
+location information has no basis for that second sentence — and it renders the real content as soon as a
+composition happens with the bound id. On the emulator that took a few minutes after a fresh add, and was
+immediate when the app was updated, because an update makes the launcher re-bind every instance; the
+periodic job draws it within 30 minutes in any case.
+
+### The rolling day periods
+
+The Tagesverlauf widget does not show "today's four periods"; it shows the next four **period slots**
+beginning with the one that contains the local time at the widget's location.
+`domain/RollingDayPeriods.kt` computes those slots:
+
+```
+Vormittag 06:00–11:59 · Nachmittag 12:00–17:59 · Abend 18:00–21:59 · Nacht 22:00–05:59
+```
+
+`currentDayPeriodSlot` maps the local clock hour to a period, and a night belongs to the calendar day
+it **starts** in — the night from Monday to Tuesday is Monday's night, which is what makes the row
+"tonight" instead of "tomorrow night". The four periods are then cycled, and every fourth slot
+advances the date, so at 19:00 the widget offers Abend (today), Nacht (today), Vormittag (tomorrow)
+and Nachmittag (tomorrow), while at 03:00 the first card is the night that began yesterday.
+`buildRollingDayPeriods` hands each slot to the existing `buildDayPeriodForecast`, so the aggregation
+rules (maximum of the hourly precipitation probabilities, sum of the amounts, mean wind, maximum
+gusts) are the documented ones from [Day periods](#day-periods-vormittag-nachmittag-abend-nacht) —
+nothing is re-aggregated for the widgets.
+
+All of it is computed in the time zone of the location, never the phone's: `RollingDayPeriodsTest`
+covers Asia/Kolkata (+05:30) and Asia/Kathmandu (+05:45) boundaries, and the two daylight saving
+transitions of Europe/Berlin. On 29 March 2026 the night loses the hour that the clock jumps over,
+which is why that window expects seven hourly points instead of eight; on 25 October it gains one.
+The window ends exactly where the next one begins at every start hour of the day, so no hour is
+skipped and none appears twice. A period the forecast does not reach keeps its card and reports that
+it has no data instead of silently dropping a day.
+
+### Background updates
+
+Only `WorkManager` (`androidx.work:work-runtime-ktx`) keeps the widgets up to date. There is no
+foreground service, no exact alarm, no boot receiver and no additional permission — `INTERNET` is
+still the only one. `updatePeriodMillis` is `0` in all three `res/xml/widget_*.xml` files because the
+system's own periodic updates are less reliable than the WorkManager schedule below.
+
+`widget/WidgetRefreshCoordinator` is the single scheduling point for all three widget types:
+
+| Work | Name | Policy |
+| --- | --- | --- |
+| Periodic refresh | `wetterplus-widget-refresh-periodic` | one unique job, 30 minutes, `ExistingPeriodicWorkPolicy.KEEP`, network constraint, exponential backoff from 10 minutes |
+| One-time refresh | `wetterplus-widget-refresh-once` | one unique job, `ExistingWorkPolicy.REPLACE`, network constraint |
+
+Not one job per widget instance: five widgets reacting to one location change still produce one
+refresh, and the periodic job exists exactly once for the whole app. `WidgetRefreshSchedulingTest`
+asserts this against the real WorkManager of a device. The interval is the cache policy's freshness
+window (`CachePolicy.freshDuration`, 30 minutes), so a run never asks the provider a question the
+cache can already answer — `WidgetRefreshWorker` loads each *distinct* location through the existing
+repository, which serves a fresh cache without any network call, and only then redraws the widgets.
+Locations are loaded once per place even when several widgets display it, because
+`WidgetDataProvider` serialises requests per location id. When the last widget is deleted the
+periodic job is cancelled, and the next refresh request of a newly added widget re-creates it.
+
+A cached forecast of a place a widget is pinned to is protected from the orphaned-cache cleanup:
+`MainViewModel` adds `WidgetConfigRepository.fixedLocationIds()` to the ids it keeps, so deleting a
+favourite cannot throw away the data a widget still shows.
+
+The day-period row and the "today/tomorrow" labels also have to catch up when the clock changes, so
+`.widget.WidgetSystemEventReceiver` listens for `ACTION_DATE_CHANGED`, `ACTION_TIME_SET`,
+`ACTION_TIMEZONE_CHANGED` and `ACTION_MY_PACKAGE_REPLACED` and asks the coordinator for one refresh.
+That refresh reads the cache; nothing is fetched for a rollover.
+
+### Appearance and taps
+
+Widgets follow the system's light or dark mode through Glance's day/night colour providers: every
+colour of `widget/presentation/WidgetVisuals.kt` carries a light and a dark value, and Glance resolves
+the pair while it builds the widget. The values are the app's own palette tokens from
+`ui/theme/Color.kt` — the same surface variants, on-surface colours, accent and storm red — so a widget
+next to the app cannot drift into different shades of the same weather; only the light tile colour
+(`WidgetTileLight`) is new, because a widget tile has to sit one step *lighter* than its surface while
+the app's cards sit lighter than a white background. Glance's other colour factory takes a colour
+*resource*, but that factory is restricted to the Glance libraries themselves — calling it from the app
+is a lint `RestrictedApi` error — so an application has to pass the explicit day/night pair, and the
+widget palette deliberately does not duplicate the icon palette in
+`values/colors.xml`.
+Icons are the same Flat Color vectors the app draws, with the wind glyph
+overlaid when a wind threshold is exceeded, and the storm colour marks the same warning.
+
+Tapping any part of a widget opens WetterPlus at the location that belongs to it:
+`MainActivity.handleWidgetLaunch` reads the extras the widget put into its own intent (only this app
+can create them) and either selects the home location or shows the pinned place. A tap never changes
+the home location and never favourites anything; showing a pinned place can move it into the
+**history**, exactly like tapping a search suggestion does.
+
 ## Versioning
 
-`app/build.gradle.kts` carries the version: `versionName = "1.1.1"` in `MAJOR.MINOR.PATCH` form
-and a positive `versionCode` that only ever increases (currently 4, because the first published
+`app/build.gradle.kts` carries the version: `versionName = "1.2.0"` in `MAJOR.MINOR.PATCH` form
+and a positive `versionCode` that only ever increases (currently 5, because the first published
 build of this repository was 1). The About screen does not repeat those numbers: it reads
 `PackageInfo.versionName` and `longVersionCode` from the installed package, so the displayed
 values cannot drift away from the build that is actually running.
@@ -490,6 +670,7 @@ compatible, PATCH for fixes, and `versionCode` increases by one per published bu
 | 1.0.0 | 2 | First published build: home location plus ordered favourites, rolling hourly window, day periods, cached offline forecasts, appearance and privacy screens. |
 | 1.1.0 | 3 | Location selection reworked: a tapped search suggestion now opens the dashboard immediately without saving anything, the current-weather card carries a favorite star, and a persistent "Verlauf" of viewed places was added next to the protected home location and the favourites. |
 | 1.1.1 | 4 | Stabilization of that workflow, no new features: the home location can no longer be un-set and is refused by the delete path, a newly selected place is named immediately while its weather loads, cached forecasts of places that left the history are removed instead of accumulating, the favorite star now toggles atomically (two quick taps are two real changes), and stored locations are normalized when they are read. |
+| 1.2.0 | 5 | Three home-screen widgets: **Aktuelles Wetter** with up to nine information tiles, **Tagesverlauf** with four rolling day periods, and **3-Tage-Vorschau**. Every instance is configured on its own (home location, current location or a pinned place), they share one WorkManager schedule and the existing cache, and a pinned place keeps its cached forecast even after it left favourites and history. The widget configuration lives in its own DataStore file and is included in the Android backup. |
 
 ## Privacy, local storage and backup
 
@@ -507,6 +688,7 @@ which links to the official Open-Meteo terms and privacy page
 | Path inside the app data directory | Content | Written by |
 | --- | --- | --- |
 | `files/datastore/weather-settings.preferences_pb` | home location, favourites with their order, the history of viewed places (`recent_locations`), selected location, appearance (`theme_mode`) | `SettingsStore`, `ThemeStore` (one DataStore file) |
+| `files/datastore/widget-configurations.preferences_pb` | one entry per home-screen widget instance: its App Widget id, its location mode and, for a pinned widget, the complete location with coordinates and time zone (`widget_configurations`, one JSON list) | `WidgetConfigStore` (a second DataStore file) |
 | `databases/weather-cache`, `weather-cache-wal`, `weather-cache-shm` | one cached forecast per location plus the time it was fetched | Room (`ForecastCache`) |
 | `cache/`, `code_cache/` | SQLite lock file, JIT caches, temporary files | the system, not the app |
 
@@ -537,11 +719,18 @@ refresh runs and as the fallback when a refresh fails, which is what makes the a
 The history itself is bounded: at most 30 entries, oldest evicted first, so the preferences file
 cannot grow without limit.
 
+Home-screen widgets widen that set in one direction only: the places a widget is **pinned** to are
+always retained (`WidgetConfigRepository.fixedLocationIds()`), because the widget holds its own copy
+of the location and can show it long after the place left the favourites and the history. Deleting
+the widget drops that protection and the row goes away with the next cleanup — the set can only
+shrink through user action, never through a bug in the cleanup.
+
 **Backup policy** (`res/xml/backup_rules.xml` for Android 11 and lower,
 `res/xml/data_extraction_rules.xml` for Android 12 and newer, both referenced from the manifest):
 
 - Kept: everything the user created — home location, favourites and their order, the history of
-  viewed places, the selected location and the appearance choice. They are covered by the default
+  viewed places, the selected location, the appearance choice and the configuration of every
+  home-screen widget (mode plus the place a pinned widget shows). They are covered by the default
   "back up the app data directory" rule, so no `<include>` is used anywhere; adding one would
   restrict the backup to the listed paths and could silently drop saved places.
 - Excluded: the forecast cache, i.e. `domain="database" path="weather-cache"` plus its `-wal` and
@@ -573,9 +762,9 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 ```powershell
 .\gradlew.bat assembleDebug          # debug APK
-.\gradlew.bat testDebugUnitTest      # unit tests (333)
+.\gradlew.bat testDebugUnitTest      # unit tests (432)
 .\gradlew.bat lintDebug              # Android lint
-.\gradlew.bat connectedDebugAndroidTest   # 142 instrumented + Compose UI tests on a running device
+.\gradlew.bat connectedDebugAndroidTest   # 171 instrumented + Compose UI tests on a running device
 .\gradlew.bat installDebug           # install on the connected device/emulator
 ```
 
@@ -815,9 +1004,9 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   rule resources are parsed the way the platform parses them; the legacy file excludes the cache
   database and nothing else; the Android 12 file configures `cloud-backup` and `device-transfer`
   identically; the excluded names are compared with `getDatabasePath(...)` of the database the
-  application actually opens (including `-wal` and `-shm`); and the DataStore file that holds the
-  saved places is computed from the same API the app uses and checked against every rule, so no
-  rule may hide it.
+  application actually opens (including `-wal` and `-shm`); and **both** DataStore files — the one with
+  the saved places and the one with the widget configurations — are computed from the same API the app
+  uses and checked against every rule, so no rule may hide what the user configured.
 - **Appearance page** (`AppearanceScreenTest`, 8 tests): the shared header with the back arrow, all
   three options offered, exactly the selected mode marked (and only one), `SYSTEM` marked when
   nothing was chosen, tapping a row reports exactly that mode, a failed write is reported on the
@@ -874,6 +1063,66 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
   semantics tree). A third test is a development tool rather than an assertion: it writes one PNG
   per gallery page into the app's files directory for visual review (see
   [Previewing the whole family](#weather-icon-design-system)).
+- **The rolling day periods** (`RollingDayPeriodsTest`, 17 tests): the slot sequence always runs
+  Vormittag → Nachmittag → Abend → Nacht and never skips one; a window read at 03:00 starts with the
+  night that began **the day before**, a window read late at night wraps into the following day; a
+  boundary hour belongs to the period that starts at it; the night is never cut in two at midnight;
+  the slot follows the location's zone rather than one shared absolute offset; a zone with a
+  fractional offset is cut at *its own* wall-clock hours; the autumn transition names the repeated
+  hour by the night it belongs to and the spring transition keeps night and morning adjacent with no
+  gap; a period beyond the forecast keeps its slot and reports that it has no data; hours given in
+  any order aggregate identically; and every period is produced by **the same code** the daily detail
+  sheet uses, with the probability staying the highest hourly value.
+- **What the three widgets put on screen** (`CurrentWidgetContentTest` 15, `PeriodWidgetContentTest`
+  12, `ThreeDayWidgetContentTest` 11 tests): "heute / morgen / übermorgen" are the **calendar days of
+  the location**, not of the device, a daily row is matched by its **date** and not by its position in
+  the response, and the rows roll over at midnight *of the location*; an hourly value counts as
+  "current" only when its interval contains the reference instant, and the current-weather widget's
+  probability is that **current hour's** value, never the daily maximum; compact, medium and expanded
+  carry two, four and nine metric values respectively, and a value the response did not report is
+  absent rather than a placeholder; a missing location, an empty snapshot and a day without hourly or
+  daily rows each get their own state instead of a guess; a period card names its local time range and
+  the weekday of the day the period belongs to, and a period the forecast does not reach keeps its card
+  and says so; every weekday, date, range and amount is produced by the app's own German formatters.
+- **Sizes** (`WidgetSizesTest`, 5 tests): every offered size of every widget maps to a layout class of
+  its own, information density grows with the size class, the grid layout needs width *and* height, the
+  smallest offered size is the fallback, and each offered size is big enough for the launcher cells it
+  claims to fill.
+- **Widget configurations** (`WidgetConfigRepositoryTest`, 19 tests): configurations are keyed by the
+  widget id and saving the same id again replaces rather than appends; deleting one widget leaves the
+  others alone and deleting the last empties the store; pruning keeps exactly the ids the launcher still
+  holds and a deleted widget stops protecting its place; a **pinned** widget keeps its place even after
+  that place left the favourites and the history, and its id is still collected for cache retention; a
+  pinned widget whose location record is missing shows nothing rather than a random place; a
+  Hauptstandort widget follows the app and shows nothing while the app has no home location; an
+  unconfigured widget behaves like the home location; two widgets of the same type can show two
+  different places and two widgets of different types keep separate records.
+- **The widget data path** (`WidgetDataProviderTest`, 14 tests): a fresh cache is served without any
+  network call, a presentation refresh reads the cache only, a forced refresh ignores the age, an
+  outdated cache is refreshed and the new values are shown, and a failed refresh keeps the cached values
+  visible; **two widgets showing the same place cause exactly one request** while two different places
+  load independently; a pinned place that left the app is still loaded, a place that was never fetched
+  reports no data instead of a guess; the set of displayed places is deduplicated; and every content
+  builder receives the same reference instant that the data was loaded with.
+- **Widget configuration screen, file and schedule on a device** (29 instrumented tests): the
+  configuration screen (`WidgetConfigurationScreenTest`, 10) offers all three modes with the sentence
+  that explains them, marks exactly the current one, asks a pinned widget for a place, names a stored
+  place once it is picked, explains a Hauptstandort widget while the app has no home location, reports a
+  write that did not reach storage, and closes without writing anything on cancel; the configuration
+  file (`WidgetConfigStoreTest`, 12) is exercised against a real DataStore — a fresh file holds nothing,
+  every mode survives a store created afterwards, a pinned place is stored complete including its time
+  zone, a damaged value reads as "no widgets", an entry with an unknown mode is skipped without taking
+  the rest down, and removing an unknown id changes nothing; the schedule
+  (`WidgetRefreshSchedulingTest`, 7) runs against the **device's real WorkManager**: several widgets
+  collapse into one one-time refresh, repeated requests do not stack up, exactly one periodic job is
+  scheduled for all of them, that job disappears when the last widget is gone and comes back when one is
+  configured, no widgets mean no work at all, a widget that was *just* configured is refreshed even while
+  the launcher does not list it yet, and the periodic interval equals the cache lifetime.
+- Six of the 46 `MainViewModelTest` tests belong to the widgets: the widgets are asked to redraw when the
+  app has new data or another location, a place a widget is pinned to keeps its cached forecast although
+  the app does not use it, deleting a location a widget still shows keeps that forecast, and the three
+  tap paths — a home-location widget, the already displayed place, and a pinned place the app no longer
+  knows, which is shown **without favouriting it** and without rewriting the stored home location.
 
 ## Manual verification performed
 
@@ -1367,12 +1616,105 @@ would have meant rewriting the stored settings, which this iteration must not do
 `toggleFavorite` calls concurrently against the same lock; on the device the taps were delivered as
 two shell commands, which is close but not the same as a finger.
 
+### Home-screen widgets (1.2.0)
+
+Walkthrough on the `Medium_Phone_API_37.0` emulator (SDK 37, Pixel launcher `com.google.android.apps.nexuslauncher`,
+1080 × 2400 px at density 2.625 → 85 dp launcher cells) with the freshly installed `app-debug.apk`
+(`dumpsys package` → `versionCode=5`, `versionName=1.2.0`). Screenshots of the configuration screen and of
+the two larger layouts are under `app/build/verify/` (`widget-01-configure.png`, `widget-12-medium.png`,
+`widget-14-expanded.png`); the other observations below were read from `uiautomator` dumps and `dumpsys`
+output rather than photographed, and stored state was read back with
+`run-as com.example.weatherapp cat files/datastore/…`.
+
+- **The picker**: all three providers are listed with their German names and descriptions, each showing
+  the declared **3 × 2** default span; `dumpsys appwidget` reports `updatePeriodMillis=0`,
+  `resizeMode=3` and three providers of this package.
+- **Configuration on add**: every add opens "Widget einrichten" with the three modes. On a fresh install
+  without a home location, the Hauptstandort mode shows "Dieses Widget zeigt den Hauptstandort. Lege
+  zuerst in WetterPlus einen Hauptstandort fest." and is still savable; **Abbrechen** leaves no widget
+  on the home screen (the activity answered `RESULT_CANCELED`).
+- **The first draw of a newly configured instance belongs to the launcher, not to the app**: a
+  3-Tage-Vorschau pinned to Newark was stored in the same second as the "Speichern" tap —
+  `{"widgetId":38,"mode":"FIXED","fixedLocation":{ …Newark, America/New_York }}` — and
+  `files/datastore/appWidgetLayout-38` showed that Glance knew that very id. Yet the cell kept showing
+  "Wetterdaten werden geladen …", and `uiautomator` reported its node as **not clickable**, which is how
+  it became clear that the composition Glance had run for it carried no resolvable App Widget id. The same
+  instance drew Newark properly — place name, "Zuletzt aktualisiert", three rows — as soon as the app was
+  updated and the launcher re-bound the widget. `onWidgetConfigured` (periodic job + unique one-time
+  refresh + the redraw of that single instance) is implemented and asserted by the instrumented
+  scheduling test, but it could not be shown to shorten that first composition on this launcher; what it
+  did achieve is that the cell says "loading" instead of claiming "Kein Ort eingestellt" without basis.
+- **One record per instance**: with three widgets placed, `files/datastore/widget-configurations.preferences_pb`
+  held `[{"widgetId":29,"mode":"SELECTED"},{"widgetId":30,"mode":"HOME"},{"widgetId":32,"mode":"FIXED",
+  "fixedLocation":{ … "name":"Newark", "timeZoneId":"America/New_York"}}]` — three ids, three modes, and the
+  pinned place stored with coordinates and time zone. Glance's own per-widget files
+  (`files/datastore/appWidgetLayout-29/-30/-32`) confirm the same ids.
+- **Deleting cleans up**: after removing two instances the same file contained only
+  `[{"widgetId":29,"mode":"SELECTED"}]` — checked twice, with different instances removed each time.
+- **Three modes side by side**: the HOME and the SELECTED widget showed the same Hamburg values, while a
+  SELECTED current-weather widget kept showing Hamburg after a FIXED widget had been pinned to another
+  continent — the widgets do not follow each other.
+- **The widget follows the app without being re-added**: on the fresh install the HOME-mode widget read
+  "Kein Ort eingestellt…"; once the onboarding search had created Hamburg as the home location, the same
+  widget switched to Hamburg data on the next refresh.
+- **Rolling periods in the widget location's time zone**: the Tagesverlauf widget pinned to Newark was
+  read at 09:20 Berlin time, i.e. **03:20 local time in New Jersey**, and rendered **Nacht 22–06 Uhr,
+  Vormittag 06–12 Uhr, Nachmittag 12–18 Uhr, Abend 18–22 Uhr**. The sequence starts with the period that
+  contains the *place's* local time, not the phone's, and the night card is captioned
+  "Do. · 22–06 Uhr" because that night belongs to the day it starts in — which is not "Heute" there.
+- **Every layout was rendered**: compact 2 × 2 for all three widgets; medium 3 × 2 (276 × 210 dp) for the
+  3-day widget with its "54 % · 2,9 mm" column and for the current-weather widget with exactly four tiles
+  (Heute min/max, Luftfeuchtigkeit, Regenw. of the **current hour**, Niederschlag); expanded 4 × 3
+  (373 × 321 dp) for the current-weather widget, where the full 3 × 3 grid appeared with all nine metrics,
+  ending in "Luftdruck 1.027 hPa · Bewölkung 78 % · Windrichtung NO (42°)". The widget numbers matched the
+  dashboard's numbers at the same minute.
+- **Resizing**: the right edge grew the widget from 3 × 2 to 4 × 2; the bottom edge grew it from two to
+  three rows once the cells below were free — the launcher refuses to grow a widget into a row that
+  already holds something, which is why the resize cap has to sit above three cell rows (400 × 340 dp).
+- **Taps land at the right place**: tapping the Newark widget opened WetterPlus showing Newark, with the
+  header "Freitag, 27. November 2026, 03:15" — the place's own local time. The card's star still read
+  "Als Favorit hinzufügen", and the settings file afterwards held `home_location` = Hamburg,
+  `favorite_locations` = empty and `recent_locations` = [Newark]: the pinned place entered the
+  **history**, never the favourites, and the home location did not move.
+- **Offline**: with airplane mode on (`Active default network: none`) the dashboard kept its cached values
+  under "Zuletzt aktualisiert: vor 30 Minuten" and both widgets kept their numbers and age lines. No
+  crash, no blank widget, `pidof` still reported the app process.
+- **Light and dark**: `cmd uimode night yes` recoloured all three widgets within seconds — dark surface,
+  lighter tiles, near-white text, the lighter sky token for the place name, and the Flat Color symbols
+  unchanged and still readable; `cmd uimode night no` restored the light palette.
+- **One job, not one per widget**: `dumpsys jobscheduler` lists a single WorkManager job
+  `#WidgetRefreshWorker#` for the package with `Minimum latency: +29m59s984ms`,
+  `Backoff: policy=1 initial=+10m0s0ms` and a connectivity constraint, while three widgets of two
+  different places were placed.
+- **Logcat** for the session: no `FATAL EXCEPTION`, no `GlanceWeatherWidget` or `WidgetRefreshWorker`
+  warning during the walkthrough (the one spurious `JobCancellationException` warning seen earlier came
+  from a test cancelling the unique work and is now rethrown instead of logged).
+
+Not verified on the device in this iteration: the periodic job was never **observed firing by itself over
+several hours** — what was checked is that JobScheduler holds one periodic WorkManager job with a
+30-minute period and a network constraint, that the instrumented scheduling test sees exactly one periodic
+and one unique one-time request, and that a manually requested refresh redraws the widgets. The
+**system-event receiver** is registered and compiled but was not exercised, because the emulator's date,
+time or time zone were not changed under a live widget; the period-boundary behaviour it is meant to
+correct is covered by `RollingDayPeriodsTest`. The **`ACTION_MY_PACKAGE_REPLACED` prune** ran only in the
+instrumented `WidgetConfigRepositoryTest`, not through a real upgrade. And everything was checked on one
+phone emulator with the Pixel launcher at the default font and display scale — no tablet, no third-party
+launcher, no large accessibility scale. The **time between configuring a widget and its first correct draw**
+was observed on that launcher (minutes, and immediately after an app update) but never measured as a bound;
+what is guaranteed by the code is a composition within the 30-minute periodic interval.
+
 ## Known limitations
 
 - **Theme:** a cold start with a pinned light/dark choice can show one frame in the system scheme
   before the stored mode is applied, because the stored value is read asynchronously from DataStore.
   The application-scoped `AppearanceViewModel` and its eager creation keep that window as small as
   practical; it is not eliminated.
+- **Newly added widgets:** the launcher composes a widget before its configuration has been confirmed, and
+  Glance cannot resolve an App Widget id on that first composition, so a freshly configured instance can
+  sit at "Wetterdaten werden geladen …" for minutes until the launcher re-binds it or the next scheduled
+  refresh composes it again. The configuration screen hands over an immediate refresh and a redraw of that
+  one instance (`onWidgetConfigured`), which is the intended path, but it could not be shown to land
+  reliably on the tested launcher. Stored configuration and weather data are unaffected meanwhile.
 - **Licences:** the About screen carries the attribution, the licence identifier, the author and a
   German summary of every entry offline. The *full* licence text is opened in the browser, so on a
   device without a network the user reads the summary rather than the complete legal text. Test-only
@@ -1469,6 +1811,47 @@ two shell commands, which is close but not the same as a finger.
   hourly detail sheet still state it in words.
 - Verified on the API 37 phone emulator only; no physical device, tablet, or low-API-level
   device testing was done.
+- **Widgets: the schedule is a contract, not a guarantee.** The periodic job asks for 30 minutes, and
+  WorkManager is free to run it later — Doze, battery optimisation, manufacturer policies or a missing
+  network all defer it. Nothing in this feature uses exact alarms, a foreground service or a boot
+  receiver, because none of that is needed for a forecast and all of it would need a reason and a
+  permission. The consequence for the day-period row: when a period boundary passes, the correction
+  arrives with the next periodic run or with the date/time/time-zone broadcast that
+  `WidgetSystemEventReceiver` listens for, never at a guaranteed minute. Long-term background runs
+  were **not** observed over several hours in this iteration: what was verified is that the jobs are
+  scheduled exactly once with the right names, interval and constraints (instrumented test against the
+  real WorkManager), and that a manually requested refresh redraws the widgets; a multi-hour field
+  observation of the periodic job was not performed.
+- A widget is only as fresh as the shared cache. If the last successful refresh is older than the
+  policy's lifetime, the widget keeps showing those values and says so ("Zuletzt aktualisiert: … –
+  Daten können veraltet sein") instead of going blank; that is the same decision the app makes in the
+  dashboard, and it means a widget can display yesterday's numbers on a device that has been offline
+  for a day.
+- Tapping a widget of a **pinned** location can move that place into the app's **history**, exactly as
+  tapping a search suggestion does. It never adds a favourite and never changes the home location, but
+  the behaviour is worth knowing: a place that was deliberately removed from the app can reappear in
+  the history after a widget tap.
+- The widget configuration cannot be reopened for an existing instance from inside the app: Android
+  shows the configuration screen when a widget is added, and there is no API to open it again for a
+  widget that is already placed. Changing a widget's location therefore means removing it and adding
+  it again — which is also the only way to delete a stale configuration that `pruneStaleConfigurations`
+  has not picked up yet.
+- Widgets carry no per-instance appearance settings (no transparent background, no accent choice, no
+  "show this many tiles" switch), and tapping a widget always opens the dashboard: there is no deep
+  link to a specific day or day period, and `requestPinAppWidget` (letting another app place a widget)
+  is not implemented. The size of the content is chosen by the widget's measured size only, so an
+  unusually large system font scale can make a medium layout tighter than intended — verified at the
+  emulator's default scale, not at the largest one.
+- Glance resolves colours when the widget content is composed, and the library's resource-based
+  `ColorProvider(Int)` is restricted to the Glance libraries themselves, so the widgets build
+  day/night pairs through the public `androidx.glance.color.ColorProvider(day, night)` from the same
+  `ui/theme/Color.kt` tokens the app uses — no `values` / `values-night` colour resources are involved
+  in widget theming. Switching the system to dark mode recoloured all three widgets within seconds on
+  the emulator, but that is a re-composition, not a live colour: a widget that is never re-composed
+  keeps the palette it was drawn with until its next refresh.
+  Widget content is a `RemoteViews` tree: it can be tapped
+  and resized, but it cannot scroll, animate or handle gestures, which is why a nine-tile grid is the
+  ceiling for the current-weather widget rather than a scrollable list.
 - Backup: the **cloud** path was exercised end to end on the emulator with the local debug
   transport (backup, wipe, reinstall, restore). The `<device-transfer>` section is configured the
   same way and is parsed by the platform, but no real phone-to-phone transfer was performed, and a
@@ -1478,8 +1861,10 @@ two shell commands, which is close but not the same as a finger.
   requests it receives is quoted from Open-Meteo's own terms and privacy page and can change there
   without any change in this repository; the screen says so. No legal assessment is made anywhere
   in the app or in this document.
-- Lint reports **no errors**. Nine advisories remain: "newer version available" for Gradle 9.6.0,
-  core-ktx, Compose BOM, the Kotlin plugins and kotlinx-serialization, and three string resources
-  (`status_live`, `data_may_be_outdated`, `offline_notice`) that were already unused before this
-  iteration and stay in place because removing them is unrelated to this change. Upgrading the
+- Lint reports **no errors**. Ten advisories remain: seven "newer version available" notices (Gradle
+  9.6.0, AGP 9.5.2, core-ktx, Compose BOM, the two Kotlin plugins and kotlinx-serialization), and the
+  three string resources (`status_live`, `data_may_be_outdated`, `offline_notice`) that were already
+  unused before this iteration and stay in place because removing them is unrelated to this change.
+  The two libraries this iteration added — Glance 1.2.0 and WorkManager 2.12.0 — are the current
+  stable versions and are not flagged. Upgrading the
   Kotlin plugins beyond 2.2.x is intentionally avoided while AGP's embedded Kotlin stdlib is pinned.

@@ -1,5 +1,6 @@
 package com.example.weatherapp
 
+import android.content.Intent
 import android.content.res.Configuration.UI_MODE_NIGHT_MASK
 import android.content.res.Configuration.UI_MODE_NIGHT_YES
 import android.os.Bundle
@@ -16,6 +17,8 @@ import com.example.weatherapp.domain.model.resolveDarkTheme
 import com.example.weatherapp.ui.MainViewModel
 import com.example.weatherapp.ui.WeatherRoot
 import com.example.weatherapp.ui.theme.WeatherAppTheme
+import com.example.weatherapp.widget.WidgetLaunch
+import com.example.weatherapp.widget.WidgetLocationMode
 
 /**
  * Single activity host.
@@ -47,6 +50,30 @@ class MainActivity : ComponentActivity() {
                     appearanceViewModel = container.appearanceViewModel,
                 )
             }
+        }
+        handleWidgetLaunch(intent)
+    }
+
+    /** A widget tap while this activity is still on screen arrives here instead of in [onCreate]. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleWidgetLaunch(intent)
+    }
+
+    /**
+     * Opens the app at the location the tapped widget shows.
+     *
+     * A plain launch and a tap on a "aktueller Ort" widget need no action - the app already shows that
+     * place. Everything else is decided by the view model, which never writes a home location and never
+     * favourite anything because a widget was tapped.
+     */
+    private fun handleWidgetLaunch(intent: Intent?) {
+        when (WidgetLaunch.locationModeFrom(intent)) {
+            null, WidgetLocationMode.SELECTED -> Unit
+            WidgetLocationMode.HOME -> viewModel.showHomeLocation()
+            WidgetLocationMode.FIXED ->
+                WidgetLaunch.locationFrom(intent)?.let { viewModel.showFixedLocation(it) }
         }
     }
 

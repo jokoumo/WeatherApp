@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Three-day widget: heute, morgen, übermorgen.
+
+    The rows are shorter than the cards of the day-period widget, so the same width works with a little
+    less height. The default span of a new instance - three cells wide, two tall - is where the medium
+    layout begins; see widget_current_weather.xml for why that is the form a new widget arrives in.
+    See widget_current_weather.xml for why updatePeriodMillis is 0.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="com.example.weatherapp.widget.WidgetConfigurationActivity"
+    android:description="@string/widget_three_day_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:maxResizeHeight="340dp"
+    android:maxResizeWidth="400dp"
+    android:minHeight="110dp"
+    android:minResizeHeight="110dp"
+    android:minResizeWidth="170dp"
+    android:minWidth="170dp"
+    android:previewLayout="@layout/glance_default_loading_layout"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

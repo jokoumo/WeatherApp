@@ -342,4 +342,13 @@ class LocationRepository(
         if (updated.selectableLocations.any { it.id == selected }) return selected
         return updated.homeLocation?.id ?: updated.favorites.firstOrNull()?.id
     }
+
+    companion object {
+        /**
+         * Fewer characters are not worth a geocoding request. Shared because the app searches in two
+         * places - the location manager and the widget configuration - and both must answer a short
+         * query in exactly the same way.
+         */
+        const val MIN_SEARCH_QUERY_LENGTH = 2
+    }
 }
