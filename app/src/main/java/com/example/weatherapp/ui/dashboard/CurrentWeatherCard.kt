@@ -215,8 +215,7 @@ fun CurrentWeatherCard(
                         Text(
                             text = stringResource(
                                 R.string.min_max_today,
-                                WeatherFormatter.temperature(todayMin),
-                                WeatherFormatter.temperature(todayMax),
+                                WeatherFormatter.temperatureRange(todayMin, todayMax),
                             ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = OnHeaderMuted,

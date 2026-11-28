@@ -272,7 +272,7 @@ class CurrentWidgetContentTest {
         val content = buildCurrentWidgetContent(data(), WidgetSizeClass.EXPANDED)
         val tile = content.tiles.first { it.metric == WidgetMetric.TODAY_RANGE }
 
-        assertEquals("2\u20139$nb\u00B0C", tile.value)
+        assertEquals("2/9$nb\u00B0C", tile.value)
     }
 
     @Test
@@ -285,7 +285,7 @@ class CurrentWidgetContentTest {
         val tile = content.tiles.first { it.metric == WidgetMetric.TODAY_RANGE }
 
         // Hours 06 to 23 of the same local day: 12 °C to 29 °C.
-        assertEquals("12\u201329$nb\u00B0C", tile.value)
+        assertEquals("12/29$nb\u00B0C", tile.value)
     }
 
     @Test
@@ -309,7 +309,7 @@ class CurrentWidgetContentTest {
         )
         val content = buildCurrentWidgetContent(tokyoData, WidgetSizeClass.EXPANDED)
 
-        assertEquals("11\u201318$nb\u00B0C", content.tiles.first { it.metric == WidgetMetric.TODAY_RANGE }.value)
+        assertEquals("11/18$nb\u00B0C", content.tiles.first { it.metric == WidgetMetric.TODAY_RANGE }.value)
     }
 
     @Test

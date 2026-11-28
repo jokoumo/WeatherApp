@@ -107,25 +107,12 @@ private fun ForecastRow(row: DayRow, sizeClass: WidgetSizeClass, modifier: Glanc
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.End,
         )
-        if (expanded && row.hasData) {
-            Column(horizontalAlignment = Alignment.Horizontal.End) {
-                ForecastTemperature(row.minTemperatureCelsius, R.string.widget_minimum, "↓", secondaryStyle)
-                ForecastTemperature(row.maxTemperatureCelsius, R.string.widget_maximum, "↑", temperatureStyle)
-            }
-        } else {
-            Text(row.temperatureRange, maxLines = 1, style = temperatureStyle)
-        }
+        val description = widgetString(R.string.temperature_range_accessibility, row.temperatureRange)
+        Text(
+            row.temperatureRange,
+            modifier = GlanceModifier.semantics { contentDescription = description },
+            maxLines = 2,
+            style = temperatureStyle,
+        )
     }
-}
-
-@Composable
-private fun ForecastTemperature(value: Double?, label: Int, arrow: String, style: TextStyle) {
-    val temperature = WeatherFormatter.temperature(value)
-    val description = widgetString(label, temperature)
-    Text(
-        text = "$arrow $temperature",
-        modifier = GlanceModifier.semantics { contentDescription = description },
-        style = style,
-        maxLines = 1,
-    )
 }

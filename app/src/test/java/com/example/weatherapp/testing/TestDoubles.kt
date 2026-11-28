@@ -235,6 +235,10 @@ class FakeForecastCacheStore : ForecastCacheStore {
         entries.remove(locationId)
     }
 
+    override suspend fun deleteIfUnchanged(entry: CachedForecast) {
+        if (entries[entry.locationId] == entry) delete(entry.locationId)
+    }
+
     override suspend fun locationIds(): List<String> = entries.keys.toList()
 
     override suspend fun deleteAll(locationIds: List<String>) {
@@ -278,8 +282,10 @@ class FakeSettingsStore(
 
     var saveCount = 0
         private set
+    var writeFailure: java.io.IOException? = null
 
     override suspend fun save(settings: LocationSettings) {
+        writeFailure?.let { throw it }
         saveCount++
         state.value = settings
     }

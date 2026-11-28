@@ -302,7 +302,7 @@ fun WidgetTile(tile: WidgetMetricTile, sizeClass: WidgetSizeClass, modifier: Gla
         )
         Text(
             text = tile.value,
-            maxLines = 1,
+            maxLines = if (tile.metric == WidgetMetric.TODAY_RANGE) 2 else 1,
             style = TextStyle(
                 color = WidgetPalette.onSurface,
                 fontSize = WidgetPalette.bodySizeFor(sizeClass),

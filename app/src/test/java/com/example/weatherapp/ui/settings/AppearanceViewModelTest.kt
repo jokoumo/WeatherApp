@@ -1,6 +1,7 @@
 package com.example.weatherapp.ui.settings
 
 import com.example.weatherapp.data.remote.ForecastMapper
+import com.example.weatherapp.data.local.ThemeStore
 import com.example.weatherapp.data.repository.LocationRepository
 import com.example.weatherapp.data.repository.WeatherRepository
 import com.example.weatherapp.domain.model.LocationSettings
@@ -14,12 +15,15 @@ import com.example.weatherapp.testing.MutableClock
 import com.example.weatherapp.testing.hamburg
 import com.example.weatherapp.ui.MainViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -50,6 +54,39 @@ class AppearanceViewModelTest {
             val model = AppearanceViewModel(store)
             advanceUntilIdle()
             body(model, store)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun theLatestThemeRemainsVisibleDuringEarlierSlowWrites() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val first = CompletableDeferred<Unit>()
+            val second = CompletableDeferred<Unit>()
+            val store = object : ThemeStore {
+                override val themeMode = MutableStateFlow(ThemeMode.SYSTEM)
+                override suspend fun save(mode: ThemeMode): Boolean {
+                    if (mode == ThemeMode.LIGHT) first.await() else second.await()
+                    themeMode.value = mode
+                    return true
+                }
+            }
+            val model = AppearanceViewModel(store)
+            runCurrent()
+            model.setThemeMode(ThemeMode.LIGHT)
+            runCurrent()
+            model.setThemeMode(ThemeMode.DARK)
+            runCurrent()
+            first.complete(Unit)
+            runCurrent()
+
+            assertEquals(ThemeMode.DARK, model.themeMode.value)
+            assertFalse(model.persistenceFailed.value)
+            second.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(ThemeMode.DARK, store.themeMode.value)
         } finally {
             Dispatchers.resetMain()
         }

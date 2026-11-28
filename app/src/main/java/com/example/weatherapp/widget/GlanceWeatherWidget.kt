@@ -43,7 +43,7 @@ abstract class GlanceWeatherWidget : GlanceAppWidget(errorUiLayout = R.layout.wi
             val configuration = state.configuration
             val surface = if (configuration != null) {
                 GlanceModifier.clickable(
-                    actionStartActivity(WidgetLaunch.intentFor(context, widgetId, configuration, state.data?.location)),
+                    actionStartActivity(WidgetLaunch.intentFor(context, widgetId)),
                 )
             } else {
                 GlanceModifier

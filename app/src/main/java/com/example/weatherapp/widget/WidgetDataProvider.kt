@@ -13,11 +13,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -61,11 +58,7 @@ data class WidgetData(
  * freshness rules. [loadForWidget] turns a widget id into location plus data; [loadForLocation] does
  * the same for the background refresh, where several widgets may name the same place.
  *
- * Requests for one location are serialised per location id. Two widgets of the same city that both
- * find a stale cache therefore produce one network call: the first one writes the fresh row, the
- * second one reads it back and does not touch the network at all. Serialising instead of sharing a
- * deferred result keeps this simple and leaves no half-finished request behind when a widget update
- * is cancelled.
+ * The shared weather repository serializes loads per location across widgets and the dashboard.
  */
 class WidgetDataProvider(
     private val locationRepository: LocationRepository,
@@ -74,8 +67,6 @@ class WidgetDataProvider(
     private val clock: Clock = Clock.systemUTC(),
 ) {
 
-    private val registryLock = Mutex()
-    private val locationLocks = mutableMapOf<String, LocationLock>()
     private val renderRevision = MutableStateFlow(0L)
     private val refreshStatus = MutableStateFlow<Map<String, RefreshStatus>>(emptyMap())
 
@@ -184,9 +175,7 @@ class WidgetDataProvider(
         location: SavedLocation,
         forceRefresh: Boolean = false,
     ): WidgetData {
-        val result = withLocationLock(location.id) {
-            weatherRepository.load(location, forceRefresh = forceRefresh)
-        }
+        val result = weatherRepository.load(location, forceRefresh = forceRefresh)
         return WidgetData(
             location = location,
             snapshot = result.snapshot,
@@ -220,22 +209,4 @@ class WidgetDataProvider(
             .distinctBy { it.id }
     }
 
-    /** Runs [block] while no other widget update is loading the same location. */
-    private suspend fun <R> withLocationLock(locationId: String, block: suspend () -> R): R {
-        val lock = registryLock.withLock {
-            locationLocks.getOrPut(locationId, ::LocationLock).also { it.users++ }
-        }
-        try {
-            return lock.mutex.withLock { block() }
-        } finally {
-            withContext(NonCancellable) {
-                registryLock.withLock {
-                    lock.users--
-                    if (lock.users == 0) locationLocks.remove(locationId)
-                }
-            }
-        }
-    }
-
-    private class LocationLock(val mutex: Mutex = Mutex(), var users: Int = 0)
 }

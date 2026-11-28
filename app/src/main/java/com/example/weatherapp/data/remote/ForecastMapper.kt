@@ -73,7 +73,7 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
      */
     fun toCurrent(dto: CurrentDto?, zone: ZoneId): CurrentWeather? {
         if (dto == null) return null
-        val temperature = dto.temperature ?: return null
+        val temperature = dto.temperature?.takeIf(Double::isFinite) ?: return null
         val isDay = toBoolean(dto.isDay)
         return CurrentWeather(
             instant = parseInstant(dto.time, zone),
@@ -99,7 +99,7 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
             val instant = parseInstant(rawTime, zone) ?: return@mapIndexedNotNull null
             val code = dto.weatherCode.getOrNull(index)
             val isDay = toBoolean(dto.isDay.getOrNull(index))
-            HourlyWeather(
+            val hour = HourlyWeather(
                 instant = instant,
                 timeZone = zone,
                 temperatureCelsius = dto.temperature.getOrNull(index),
@@ -117,6 +117,14 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
                 isDay = isDay,
                 snowfallCentimetres = dto.snowfall.getOrNull(index),
             )
+            hour.takeIf {
+                it.temperatureCelsius != null || it.apparentTemperatureCelsius != null ||
+                    it.weatherCode != null || it.precipitationProbabilityPercent != null ||
+                    it.precipitationMillimetres != null || it.relativeHumidityPercent != null ||
+                    it.cloudCoverPercent != null || it.windSpeedKilometresPerHour != null ||
+                    it.windDirectionDegrees != null || it.windGustsKilometresPerHour != null ||
+                    it.pressureHectopascal != null || it.snowfallCentimetres != null
+            }
         }
     }
 
@@ -134,7 +142,7 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
             val code = dto.weatherCode.getOrNull(index)
             val sunshine = dto.sunshineDuration.getOrNull(index)
             val daylight = dto.daylightDuration.getOrNull(index)
-            DailyWeather(
+            val day = DailyWeather(
                 date = date,
                 weatherCode = code,
                 condition = if (code == null) null else WeatherCondition.fromWeatherCode(code, isDay = true),
@@ -144,9 +152,15 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
                 precipitationMillimetres = dto.precipitationSum.getOrNull(index),
                 maxWindSpeedKilometresPerHour = dto.windSpeedMax.getOrNull(index),
                 maxWindGustsKilometresPerHour = dto.windGustsMax.getOrNull(index),
-                sunshineSeconds = sunshine?.takeIf { it > 0 }?.toLong(),
-                daylightSeconds = daylight?.takeIf { it > 0 }?.toLong(),
+                sunshineSeconds = sunshine?.takeIf { it.isFinite() && it >= 0 }?.toLong(),
+                daylightSeconds = daylight?.takeIf { it.isFinite() && it >= 0 }?.toLong(),
             )
+            day.takeIf {
+                it.weatherCode != null || it.minTemperatureCelsius != null || it.maxTemperatureCelsius != null ||
+                    it.precipitationProbabilityPercent != null || it.precipitationMillimetres != null ||
+                    it.maxWindSpeedKilometresPerHour != null || it.maxWindGustsKilometresPerHour != null ||
+                    it.sunshineSeconds != null || it.daylightSeconds != null
+            }
         }
     }
 
@@ -159,7 +173,7 @@ class ForecastMapper(private val json: Json = NetworkModule.json) {
             val name = dto.name?.trim().orEmpty()
             val latitude = dto.latitude ?: return@mapNotNull null
             val longitude = dto.longitude ?: return@mapNotNull null
-            if (name.isEmpty()) return@mapNotNull null
+            if (name.isEmpty() || latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return@mapNotNull null
             SavedLocation(
                 id = dto.id?.toString() ?: "coord-${latitude.formatted(4)}-${longitude.formatted(4)}",
                 name = name,
@@ -207,8 +221,8 @@ private fun parseLocalDate(raw: String?, zone: ZoneId, utcOffsetSeconds: Long?):
     raw.asEpochSecond()?.let { seconds ->
         val instant = Instant.ofEpochSecond(seconds)
         val offset = utcOffsetSeconds
-            ?.toInt()
-            ?.let { runCatching { ZoneOffset.ofTotalSeconds(it) }.getOrNull() }
+            ?.takeIf { it in ZoneOffset.MIN.totalSeconds.toLong()..ZoneOffset.MAX.totalSeconds.toLong() }
+            ?.let { ZoneOffset.ofTotalSeconds(it.toInt()) }
         return offset?.let { instant.atOffset(it).toLocalDate() }
             ?: instant.atZone(zone).toLocalDate()
     }

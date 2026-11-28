@@ -1,8 +1,12 @@
 package com.example.weatherapp.data.repository
 
 import com.example.weatherapp.data.remote.ForecastMapper
+import com.example.weatherapp.data.local.CachedForecast
+import com.example.weatherapp.data.local.ForecastCacheStore
 import com.example.weatherapp.data.remote.dto.CurrentDto
 import com.example.weatherapp.data.remote.dto.ForecastResponseDto
+import com.example.weatherapp.data.remote.dto.DailyDto
+import com.example.weatherapp.data.remote.dto.HourlyDto
 import com.example.weatherapp.testing.FakeForecastApi
 import com.example.weatherapp.testing.FakeForecastCacheStore
 import com.example.weatherapp.testing.MutableClock
@@ -11,6 +15,11 @@ import com.example.weatherapp.testing.hamburg
 import com.example.weatherapp.testing.sampleForecastDto
 import com.example.weatherapp.domain.model.DataLoadFailure
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -82,6 +91,24 @@ class WeatherRepositoryTest {
         assertEquals(1, api.callCount)
         assertEquals(SnapshotSource.LIVE, result.source)
         assertEquals(Instant.parse("2026-11-21T23:05:00Z"), cache.entries.getValue(hamburg.id).fetchedAt)
+    }
+
+    @Test
+    fun `cache stays usable through the last interval in a fractional offset zone`() = runTest {
+        val location = hamburg.copy(timeZoneId = "Asia/Kathmandu")
+        val lastStart = Instant.parse("2026-11-22T10:15:00Z")
+        val payload = ForecastResponseDto(
+            timezone = location.timeZoneId,
+            hourly = HourlyDto(time = listOf(lastStart.epochSecond.toString()), temperature = listOf(2.0)),
+        )
+        cache.save(location.id, now.minus(Duration.ofMinutes(2)), mapper.encode(payload))
+
+        assertEquals(SnapshotSource.CACHED, repository.load(location).source)
+        assertEquals(0, api.callCount)
+
+        clock.advance(Duration.between(now, lastStart.plus(Duration.ofHours(1))))
+        assertEquals(SnapshotSource.LIVE, repository.load(location).source)
+        assertEquals(1, api.callCount)
     }
 
     @Test
@@ -212,6 +239,39 @@ class WeatherRepositoryTest {
     }
 
     @Test
+    fun `timestamp only responses do not overwrite a useful cached forecast`() = runTest {
+        val previous = now.minus(Duration.ofHours(1))
+        val payload = mapper.encode(sampleForecastDto())
+        cache.save(hamburg.id, previous, payload)
+        api.payload = ForecastResponseDto(
+            hourly = HourlyDto(time = listOf("2026-11-22T12:00")),
+            daily = DailyDto(time = listOf("2026-11-22")),
+        )
+
+        val result = repository.load(hamburg)
+        assertEquals(DataLoadFailure.INVALID_DATA, result.failure)
+        assertEquals(SnapshotSource.CACHED, result.source)
+        assertEquals(previous, result.snapshot?.fetchedAt)
+        assertEquals(payload, cache.entries[hamburg.id]?.payloadJson)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `concurrent dashboard and widget loads share the first successful fetch`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        api.gate = gate
+        val dashboard = async { repository.load(hamburg) }
+        runCurrent()
+        val widget = async { repository.load(hamburg) }
+        runCurrent()
+        gate.complete(Unit)
+
+        assertEquals(SnapshotSource.LIVE, dashboard.await().source)
+        assertEquals(SnapshotSource.CACHED, widget.await().source)
+        assertEquals(1, api.callCount)
+    }
+
+    @Test
     fun `a payload without any usable values is not cached`() = runTest {
         api.payload = ForecastResponseDto(latitude = 53.55, timezone = "Europe/Berlin")
         val result = repository.load(hamburg, forceRefresh = true)
@@ -251,21 +311,24 @@ class WeatherRepositoryTest {
 
     @Test
     fun `a failing cache read degrades to a network request`() = runTest {
-        val throwingCache = object : com.example.weatherapp.data.local.ForecastCacheStore {
-            override suspend fun find(locationId: String): com.example.weatherapp.data.local.CachedForecast =
+        val throwingCache = object : ForecastCacheStore by cache {
+            override suspend fun find(locationId: String): CachedForecast =
                 throw IOException("disk failure")
-
-            override suspend fun save(locationId: String, fetchedAt: Instant, payloadJson: String) = Unit
-
-            override suspend fun delete(locationId: String) = Unit
-
-            override suspend fun locationIds(): List<String> = throw IOException("disk failure")
-
-            override suspend fun deleteAll(locationIds: List<String>) = Unit
         }
         val result = WeatherRepository(api, throwingCache, mapper, clock).load(hamburg)
         assertEquals(SnapshotSource.LIVE, result.source)
         assertEquals(1, api.callCount)
+    }
+
+    @Test
+    fun `cancelled cache read does not reach the forecast API`() = runTest {
+        val cancelled = CancellationException("Request was replaced")
+        val cancelledCache = object : ForecastCacheStore by cache {
+            override suspend fun find(locationId: String): CachedForecast = throw cancelled
+        }
+        val result = runCatching { WeatherRepository(api, cancelledCache, mapper, clock).load(hamburg) }
+        assertEquals(cancelled, result.exceptionOrNull())
+        assertEquals(0, api.callCount)
     }
 
     @Test

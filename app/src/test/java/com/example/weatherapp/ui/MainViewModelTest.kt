@@ -36,6 +36,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.UnknownHostException
+import java.io.IOException
 import java.time.Duration
 import java.time.Instant
 
@@ -53,6 +54,7 @@ class MainViewModelTest {
     private lateinit var geocodingApi: FakeGeocodingApi
     private lateinit var clock: MutableClock
     private lateinit var viewModel: MainViewModel
+    private lateinit var settingsStore: FakeSettingsStore
 
     private val now = Instant.parse("2026-11-22T11:00:00Z")
 
@@ -81,7 +83,8 @@ class MainViewModelTest {
             geocodingApi = FakeGeocodingApi(
                 results = listOf(geocoderResult(2911298, "Hamburg", 53.55, 9.99)),
             )
-            val locationRepository = LocationRepository(FakeSettingsStore(initialSettings), geocodingApi)
+            settingsStore = FakeSettingsStore(initialSettings)
+            val locationRepository = LocationRepository(settingsStore, geocodingApi)
             val weatherRepository = WeatherRepository(forecastApi, cache, ForecastMapper(), clock)
             viewModel = MainViewModel(
                 locationRepository,
@@ -94,6 +97,27 @@ class MainViewModelTest {
         } finally {
             Dispatchers.resetMain()
         }
+    }
+
+    @Test
+    fun `failed home setup keeps search results and permits retry`() = withViewModel(initialSettings = LocationSettings()) {
+        viewModel.onSearchQueryChange("Hamburg")
+        advanceUntilIdle()
+        val choice = viewModel.uiState.value.search.results.single()
+        settingsStore.writeFailure = IOException("Settings unavailable")
+        viewModel.setHomeLocation(choice)
+        advanceUntilIdle()
+
+        assertEquals(UserMessage.LOCATION_SAVE_FAILED, viewModel.uiState.value.message)
+        assertEquals(listOf(choice), viewModel.uiState.value.search.results)
+        assertNull(viewModel.uiState.value.settings.homeLocation)
+        assertEquals(0, forecastApi.callCount)
+
+        settingsStore.writeFailure = null
+        viewModel.setHomeLocation(choice)
+        advanceUntilIdle()
+        assertEquals(choice, viewModel.uiState.value.settings.homeLocation)
+        assertEquals(UserMessage.HOME_LOCATION_SET, viewModel.uiState.value.message)
     }
 
     @Test

@@ -78,8 +78,8 @@ fun DashboardScreen(
 ) {
     val weather = state.weather
     val snackbarHostState = remember { SnackbarHostState() }
-    var selectedEntry by remember { mutableStateOf<HourlyWindowEntry?>(null) }
-    var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
+    var selectedEntry by remember(weather.location?.id) { mutableStateOf<HourlyWindowEntry?>(null) }
+    var selectedDay by remember(weather.location?.id) { mutableStateOf<LocalDate?>(null) }
     val message = state.message
     val messageText = if (message != null) stringResource(message.messageRes()) else null
 

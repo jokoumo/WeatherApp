@@ -28,11 +28,15 @@ data class WidgetConfigurationUiState(
     /** Set once the configuration is in storage; the activity closes the screen on it. */
     val saved: Boolean = false,
     val saveFailed: Boolean = false,
+    val locationChangedDuringSave: Boolean = false,
     val isSaving: Boolean = false,
     val isReady: Boolean = true,
 ) {
     val canSave: Boolean
-        get() = isReady && !isSaving && !saved && when (mode) {
+        get() = isReady && !isSaving && !saved && hasValidLocation
+
+    internal val hasValidLocation: Boolean
+        get() = when (mode) {
             WidgetLocationMode.HOME -> hasHomeLocation
             WidgetLocationMode.SELECTED -> hasSelectedLocation
             WidgetLocationMode.FIXED -> fixedLocation.isValidWidgetLocation()
@@ -84,7 +88,7 @@ class WidgetConfigurationViewModel(
     fun onModeSelected(mode: WidgetLocationMode) {
         if (!_uiState.value.isReady || _uiState.value.isSaving) return
         if (mode != WidgetLocationMode.FIXED) clearSearch()
-        _uiState.update { it.copy(mode = mode, saveFailed = false) }
+        _uiState.update { it.copy(mode = mode, saveFailed = false, locationChangedDuringSave = false) }
     }
 
     /**
@@ -133,7 +137,12 @@ class WidgetConfigurationViewModel(
         if (_uiState.value.isSaving || !location.isValidWidgetLocation()) return
         clearSearch()
         _uiState.update {
-            it.copy(mode = WidgetLocationMode.FIXED, fixedLocation = location, saveFailed = false)
+            it.copy(
+                mode = WidgetLocationMode.FIXED,
+                fixedLocation = location,
+                saveFailed = false,
+                locationChangedDuringSave = false,
+            )
         }
     }
 
@@ -147,12 +156,12 @@ class WidgetConfigurationViewModel(
     fun save() {
         val state = _uiState.value
         if (!state.canSave) return
-        _uiState.update { it.copy(isSaving = true, saveFailed = false) }
+        _uiState.update { it.copy(isSaving = true, saveFailed = false, locationChangedDuringSave = false) }
         viewModelScope.launch {
             try {
                 val validated = state.withSettings(locationRepository.currentSettings())
-                if (!validated.canSave) {
-                    _uiState.update { validated }
+                if (!validated.hasValidLocation) {
+                    _uiState.update { it.copy(isSaving = false, locationChangedDuringSave = true) }
                     return@launch
                 }
                 widgetConfigRepository.save(

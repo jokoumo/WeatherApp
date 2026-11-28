@@ -94,13 +94,13 @@ private fun PeriodCardView(card: PeriodCard, sizeClass: WidgetSizeClass, modifie
                 fontWeight = FontWeight.Bold,
             ),
         )
+        Text(
+            text = card.temperatureRange,
+            maxLines = 2,
+            style = TextStyle(color = WidgetPalette.onSurface, fontSize = WidgetPalette.bodySizeFor(sizeClass)),
+        )
         Row(verticalAlignment = Alignment.Vertical.CenterVertically) {
             Column(modifier = GlanceModifier.defaultWeight()) {
-                Text(
-                    text = card.temperatureRange,
-                    maxLines = 1,
-                    style = TextStyle(color = WidgetPalette.onSurface, fontSize = WidgetPalette.bodySizeFor(sizeClass)),
-                )
                 val details = when {
                     !card.hasData -> "$dayLabel · ${widgetString(R.string.widget_period_no_data)}"
                     precipitation != null -> "$dayAndTime · $precipitation"

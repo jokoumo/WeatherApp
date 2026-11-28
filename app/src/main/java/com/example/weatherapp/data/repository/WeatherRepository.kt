@@ -10,6 +10,10 @@ import com.example.weatherapp.domain.model.DataLoadFailure
 import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.domain.model.WeatherSnapshot
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.time.Clock
 import java.time.Instant
@@ -43,19 +47,21 @@ class WeatherRepository(
 ) {
 
     private val now: Instant get() = clock.instant()
+    private val registryLock = Mutex()
+    private val locationLocks = mutableMapOf<String, LocationLock>()
 
     /** Cached snapshot for a location without touching the network. */
     suspend fun loadCached(location: SavedLocation): WeatherSnapshot? {
-        val cached = runCatching { cacheStore.find(location.id) }
-            .onFailure { Log.w(TAG, "Reading forecast cache failed", it) }
-            .getOrNull() ?: return null
+        val cached = cacheOperation("Reading forecast cache failed") { cacheStore.find(location.id) }
+            ?: return null
         val dto = mapper.decodeCached(cached.payloadJson)
-        if (dto == null) {
-            Log.w(TAG, "Cached forecast payload could not be decoded")
-            runCatching { cacheStore.delete(location.id) }
-            return null
+        val snapshot = dto?.takeUnless { it.error == true }?.let {
+            mapper.toSnapshot(it, location, cached.fetchedAt)
         }
-        return mapper.toSnapshot(dto, location, cached.fetchedAt)
+        if (snapshot != null && !snapshot.isEmpty) return snapshot
+        Log.w(TAG, "Cached forecast has no usable weather")
+        cacheOperation("Removing unusable forecast failed") { cacheStore.deleteIfUnchanged(cached) }
+        return null
     }
 
     /**
@@ -64,21 +70,17 @@ class WeatherRepository(
      * indefinitely.
      */
     suspend fun dropCache(locationId: String) {
-        runCatching { cacheStore.delete(locationId) }
-            .onFailure { Log.w(TAG, "Removing forecast cache failed", it) }
+        cacheOperation("Removing forecast cache failed") { cacheStore.delete(locationId) }
     }
 
     /** Every location id that currently holds a cached forecast. */
     suspend fun cachedLocationIds(): List<String> =
-        runCatching { cacheStore.locationIds() }
-            .onFailure { Log.w(TAG, "Reading forecast cache keys failed", it) }
-            .getOrDefault(emptyList())
+        cacheOperation("Reading forecast cache keys failed") { cacheStore.locationIds() }.orEmpty()
 
     /** Drops several cached forecasts at once; an empty collection does nothing. */
     suspend fun dropCaches(locationIds: Collection<String>) {
         if (locationIds.isEmpty()) return
-        runCatching { cacheStore.deleteAll(locationIds.toList()) }
-            .onFailure { Log.w(TAG, "Removing forecast cache entries failed", it) }
+        cacheOperation("Removing forecast cache entries failed") { cacheStore.deleteAll(locationIds.toList()) }
     }
 
     /**
@@ -94,13 +96,13 @@ class WeatherRepository(
     suspend fun load(
         location: SavedLocation,
         forceRefresh: Boolean = false,
-    ): WeatherLoadResult {
+    ): WeatherLoadResult = withLocationLock(location.id) {
         val cached = loadCached(location)
         if (cached != null && !forceRefresh && isFresh(cached, now)) {
-            return WeatherLoadResult(snapshot = cached, source = SnapshotSource.CACHED)
+            return@withLocationLock WeatherLoadResult(snapshot = cached, source = SnapshotSource.CACHED)
         }
 
-        return when (val outcome = fetch(location)) {
+        when (val outcome = fetch(location)) {
             is FetchOutcome.Success -> {
                 val snapshot = mapper.toSnapshot(outcome.dto, location, outcome.fetchedAt)
                 if (snapshot.isEmpty) {
@@ -143,7 +145,7 @@ class WeatherRepository(
             val body = response.body()
                 ?: return FetchOutcome.Failure(DataLoadFailure.INVALID_DATA)
             if (body.error == true) {
-                Log.w(TAG, "Open-Meteo reported an error: ${body.reason.orEmpty()}")
+                Log.w(TAG, "Open-Meteo reported an error")
                 return FetchOutcome.Failure(DataLoadFailure.INVALID_DATA)
             }
             FetchOutcome.Success(dto = body, fetchedAt = requestedAt)
@@ -158,10 +160,38 @@ class WeatherRepository(
     }
 
     private suspend fun persist(locationId: String, outcome: FetchOutcome.Success) {
-        runCatching {
+        cacheOperation("Writing forecast cache failed") {
             cacheStore.save(locationId, outcome.fetchedAt, mapper.encode(outcome.dto))
-        }.onFailure { Log.w(TAG, "Writing forecast cache failed", it) }
+        }
     }
+
+    private inline fun <T> cacheOperation(message: String, block: () -> T): T? = try {
+        block()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        Log.w(TAG, message, failure)
+        null
+    }
+
+    /** Dashboard and widgets serialize loads of one place and recheck cache freshness on entry. */
+    private suspend fun <T> withLocationLock(locationId: String, block: suspend () -> T): T {
+        val lock = registryLock.withLock {
+            locationLocks.getOrPut(locationId, ::LocationLock).also { it.users++ }
+        }
+        try {
+            return lock.mutex.withLock { block() }
+        } finally {
+            withContext(NonCancellable) {
+                registryLock.withLock {
+                    lock.users--
+                    if (lock.users == 0) locationLocks.remove(locationId)
+                }
+            }
+        }
+    }
+
+    private class LocationLock(val mutex: Mutex = Mutex(), var users: Int = 0)
 
     private sealed interface FetchOutcome {
         data class Success(val dto: ForecastResponseDto, val fetchedAt: Instant) : FetchOutcome

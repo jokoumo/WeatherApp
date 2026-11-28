@@ -207,6 +207,9 @@ fun WidgetConfigurationScreen(
                             )
                         }
                         if (state.saveFailed) InfoNote(text = stringResource(R.string.widget_configure_failed))
+                        if (state.locationChangedDuringSave) {
+                            InfoNote(text = stringResource(R.string.widget_configure_location_changed))
+                        }
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),

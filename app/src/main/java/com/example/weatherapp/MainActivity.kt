@@ -20,6 +20,7 @@ import com.example.weatherapp.ui.WeatherRoot
 import com.example.weatherapp.ui.theme.WeatherAppTheme
 import com.example.weatherapp.widget.WidgetLaunch
 import com.example.weatherapp.widget.WidgetLocationMode
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private val container by lazy { (application as WeatherApplication).container }
+    private var widgetLaunchJob: Job? = null
 
     private val viewModel: MainViewModel by lazy {
         ViewModelProvider(this, container.mainViewModelFactory)[MainViewModel::class.java]
@@ -53,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-        handleWidgetLaunch(intent)
+        if (savedInstanceState == null) handleWidgetLaunch(intent)
     }
 
     /** A widget tap while this activity is still on screen arrives here instead of in [onCreate]. */
@@ -71,11 +73,19 @@ class MainActivity : ComponentActivity() {
      * favourite anything because a widget was tapped.
      */
     private fun handleWidgetLaunch(intent: Intent?) {
-        when (WidgetLaunch.locationModeFrom(intent)) {
-            null, WidgetLocationMode.SELECTED -> Unit
-            WidgetLocationMode.HOME -> viewModel.showHomeLocation()
-            WidgetLocationMode.FIXED ->
-                WidgetLaunch.locationFrom(intent)?.let { viewModel.showFixedLocation(it) }
+        widgetLaunchJob?.cancel()
+        if (WidgetLaunch.widgetIdFrom(intent) == null) return
+        widgetLaunchJob = lifecycleScope.launch {
+            val configuration = WidgetLaunch.resolveConfiguration(
+                intent,
+                container.widgetRefreshCoordinator.liveWidgetIds(),
+                container.widgetConfigRepository,
+            ) ?: return@launch
+            when (configuration.mode) {
+                WidgetLocationMode.SELECTED -> Unit
+                WidgetLocationMode.HOME -> viewModel.showHomeLocation()
+                WidgetLocationMode.FIXED -> configuration.fixedLocation?.let(viewModel::showFixedLocation)
+            }
         }
     }
 

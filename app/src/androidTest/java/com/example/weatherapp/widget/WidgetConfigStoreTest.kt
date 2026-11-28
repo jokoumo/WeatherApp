@@ -1,5 +1,6 @@
 package com.example.weatherapp.widget
 
+import android.content.Intent
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
@@ -14,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -56,6 +58,22 @@ class WidgetConfigStoreTest {
     @Test
     fun aFreshFileHoldsNoWidgets() = runBlocking {
         assertTrue(stored().isEmpty())
+    }
+
+    @Test
+    fun widgetTapUsesTheBoundStoredConfiguration() = runBlocking {
+        val repository = WidgetConfigRepository(store())
+        val original = WidgetConfiguration(11, WidgetLocationMode.FIXED, tokyo)
+        repository.save(original)
+        val tap = WidgetLaunch.intentFor(context, 11)
+            .putExtra("com.example.weatherapp.extra.WIDGET_LOCATION_ID", "unrelated")
+            .putExtra("com.example.weatherapp.extra.WIDGET_LOCATION_MODE", "HOME")
+
+        assertEquals(original, WidgetLaunch.resolveConfiguration(tap, setOf(11), repository))
+        assertNull(WidgetLaunch.resolveConfiguration(tap, setOf(12), repository))
+        assertNull(WidgetLaunch.resolveConfiguration(Intent(Intent.ACTION_MAIN), setOf(11), repository))
+        repository.remove(listOf(11))
+        assertNull(WidgetLaunch.resolveConfiguration(tap, setOf(11), repository))
     }
 
     /**

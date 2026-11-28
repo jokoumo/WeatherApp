@@ -134,19 +134,20 @@ class WeatherFormatterTest {
     }
 
     @Test
-    fun `temperature range only appears when both ends differ`() {
-        assertEquals("7\u201312\u00A0\u00B0C", formatter.temperatureRange(7.4, 11.6))
-        assertEquals("-3\u20132\u00A0\u00B0C", formatter.temperatureRange(-3.2, 2.1))
-        // Both ends below zero: the separator needs space so the range does not read as one long
-        // dash ("-2–-1 °C" would be ambiguous).
-        assertEquals("-2 \u2013 -1\u00A0\u00B0C", formatter.temperatureRange(-2.4, -0.6))
-        // One value, or two that round to the same number, is printed as a single temperature.
-        assertEquals("7\u00A0\u00B0C", formatter.temperatureRange(7.2, 7.4))
+    fun `temperature range uses a slash for two reported values`() {
+        assertEquals("7/12\u00A0\u00B0C", formatter.temperatureRange(7.4, 11.6))
+        assertEquals("-3/2\u00A0\u00B0C", formatter.temperatureRange(-3.2, 2.1))
+        assertEquals("-2/-1\u00A0\u00B0C", formatter.temperatureRange(-2.4, -0.6))
+        assertEquals("7/7\u00A0\u00B0C", formatter.temperatureRange(7.2, 7.4))
         assertEquals("7\u00A0\u00B0C", formatter.temperatureRange(null, 7.2))
         assertEquals("7\u00A0\u00B0C", formatter.temperatureRange(7.2, null))
         assertEquals("\u2013", formatter.temperatureRange(null, null))
         // The order of the two values never changes the result.
-        assertEquals("7\u201312\u00A0\u00B0C", formatter.temperatureRange(11.6, 7.4))
+        assertEquals("7/12\u00A0\u00B0C", formatter.temperatureRange(11.6, 7.4))
+        assertEquals("-12/-10\u00A0°C", formatter.temperatureRange(-12.0, -10.0))
+        assertEquals("0/0\u00A0°C", formatter.temperatureRange(0.0, 0.0))
+        assertEquals("0/8\u00A0°C", formatter.temperatureRange(-0.0, 8.0))
+        assertEquals("1.000/1.200\u00A0°C", formatter.temperatureRange(1000.0, 1200.0))
     }
 
     @Test
@@ -155,7 +156,7 @@ class WeatherFormatterTest {
         assertEquals("1 h", formatter.duration(3_600))
         assertEquals("20 min", formatter.duration(1_200))
         assertEquals("–", formatter.duration(null))
-        assertEquals("–", formatter.duration(0))
+        assertEquals("0 min", formatter.duration(0))
     }
 
     @Test

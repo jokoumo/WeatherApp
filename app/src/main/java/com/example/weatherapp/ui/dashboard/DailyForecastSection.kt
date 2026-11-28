@@ -2,6 +2,7 @@ package com.example.weatherapp.ui.dashboard
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,7 +23,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -104,18 +108,7 @@ fun DetailedDayCard(
                     size = 44.dp,
                 )
                 Spacer(Modifier.width(12.dp))
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = WeatherFormatter.temperature(day.maxTemperatureCelsius),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = WeatherFormatter.temperature(day.minTemperatureCelsius),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                DailyTemperatureRange(day)
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
@@ -242,59 +235,73 @@ fun ExtendedDayList(
 
 @Composable
 private fun ExtendedDayRow(day: DailyWeather) {
-    Row(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.width(84.dp)) {
-            Text(
-                text = WeatherFormatter.weekday(day.date),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = WeatherFormatter.shortDate(day.date),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        val fontScale = LocalDensity.current.fontScale
+        val useStackedPrecipitation = maxWidth < 254.dp * fontScale
+        val separateRange = maxWidth < 192.dp * fontScale
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = if (useStackedPrecipitation) Modifier.weight(1f) else Modifier.width(84.dp)) {
+                    Text(
+                        text = WeatherFormatter.weekday(day.date),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = WeatherFormatter.shortDate(day.date),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (useStackedPrecipitation) ExtendedPrecipitationLabel(day)
+                }
+                Spacer(Modifier.width(8.dp))
+                WeatherIcon(
+                    condition = day.condition,
+                    precipitation = day.precipitationStyle,
+                    windWarning = day.windWarning,
+                    size = 30.dp,
+                )
+                Spacer(Modifier.width(10.dp))
+                if (!useStackedPrecipitation) {
+                    ExtendedPrecipitationLabel(day, Modifier.weight(1f), maxLines = 1)
+                    Spacer(Modifier.width(10.dp))
+                }
+                if (!separateRange) DailyTemperatureRange(day)
+            }
+            if (separateRange) DailyTemperatureRange(day, Modifier.fillMaxWidth())
         }
-        Spacer(Modifier.width(8.dp))
-        WeatherIcon(
-            condition = day.condition,
-            precipitation = day.precipitationStyle,
-            windWarning = day.windWarning,
-            size = 30.dp,
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = extendedPrecipitationText(day),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = WeatherFormatter.temperatureValue(day.minTemperatureCelsius) + "°",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.End,
-            modifier = Modifier.width(42.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = WeatherFormatter.temperatureValue(day.maxTemperatureCelsius) + "°",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.End,
-            modifier = Modifier.width(42.dp),
-        )
     }
+}
+
+@Composable
+private fun ExtendedPrecipitationLabel(day: DailyWeather, modifier: Modifier = Modifier, maxLines: Int = 2) {
+    Text(
+        text = extendedPrecipitationText(day),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun DailyTemperatureRange(day: DailyWeather, modifier: Modifier = Modifier) {
+    val range = WeatherFormatter.temperatureRange(day.minTemperatureCelsius, day.maxTemperatureCelsius)
+    val description = stringResource(R.string.temperature_range_accessibility, range)
+    Text(
+        text = range,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.End,
+        modifier = modifier.semantics { contentDescription = description },
+    )
 }
 
 /**

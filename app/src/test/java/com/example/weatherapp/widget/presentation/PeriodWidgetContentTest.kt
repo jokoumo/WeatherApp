@@ -1,4 +1,4 @@
-﻿package com.example.weatherapp.widget.presentation
+package com.example.weatherapp.widget.presentation
 
 import com.example.weatherapp.domain.DayPeriod
 import com.example.weatherapp.domain.model.HourlyWeather
@@ -83,6 +83,14 @@ class PeriodWidgetContentTest {
     )
 
     // region states
+
+    @Test
+    fun `a cold rolling period retains both signed extrema`() {
+        val time = wednesday.atTime(8, 0).atZone(berlin).toInstant()
+        val forecast = hours { instant -> hour(instant, temperature = if (instant == time) -24.0 else -12.0) }
+        val morning = buildPeriodWidgetContent(data(forecast, time)).periods.first()
+        assertEquals("-24/-12$nb°C", morning.temperatureRange)
+    }
 
     @Test
     fun `a widget without a location has no cards`() {
@@ -258,7 +266,7 @@ class PeriodWidgetContentTest {
 
         assertTrue(row.hasData)
         // One value, printed once - the same rule the app uses when a period does not vary.
-        assertEquals("5$nb\u00B0C", row.temperatureRange)
+        assertEquals("5/5$nb\u00B0C", row.temperatureRange)
         assertTrue(row.conditionLabelRes != 0)
         assertTrue(row.iconRes != 0)
     }

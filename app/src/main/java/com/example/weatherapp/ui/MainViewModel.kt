@@ -1,5 +1,6 @@
 package com.example.weatherapp.ui
 
+import android.util.Log
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -36,6 +38,7 @@ enum class UserMessage {
     HOME_LOCATION_SET,
     HOME_LOCATION_PROTECTED,
     HISTORY_CLEARED,
+    LOCATION_SAVE_FAILED,
 }
 
 /** German snackbar text for a [UserMessage]. */
@@ -47,6 +50,7 @@ fun UserMessage.messageRes(): Int = when (this) {
     UserMessage.HOME_LOCATION_SET -> R.string.message_home_location_set
     UserMessage.HOME_LOCATION_PROTECTED -> R.string.message_home_location_protected
     UserMessage.HISTORY_CLEARED -> R.string.message_history_cleared
+    UserMessage.LOCATION_SAVE_FAILED -> R.string.message_location_save_failed
 }
 
 /**
@@ -210,7 +214,7 @@ class MainViewModel(
 
     fun selectLocation(locationId: String) {
         if (locationId == _uiState.value.weather.location?.id) return
-        viewModelScope.launch {
+        launchLocationAction {
             applyLocationChange { locationRepository.selectLocation(locationId) }
         }
     }
@@ -269,12 +273,12 @@ class MainViewModel(
         if (weather.isRefreshing) return
         val zone = weather.timeZone ?: zoneIdOrDefault(location.timeZoneId, SavedLocation.DEFAULT_TIME_ZONE_ID)
         if (CachePolicy.isStale(fetchedAt, timeProvider(), zone)) {
-            loadWeather(location, forceRefresh = true)
+            loadWeather(location, forceRefresh = false)
         }
     }
 
     fun setHomeLocation(location: SavedLocation) {
-        viewModelScope.launch {
+        launchLocationAction {
             applyLocationChange { locationRepository.setHomeLocation(location) }
             clearSearch()
             _uiState.update { it.copy(message = UserMessage.HOME_LOCATION_SET) }
@@ -291,14 +295,14 @@ class MainViewModel(
      * happened to look when the tap arrived.
      */
     fun toggleFavorite(location: SavedLocation) {
-        viewModelScope.launch {
+        launchLocationAction {
             val result = applyLocationChange { locationRepository.toggleFavorite(location) }
             _uiState.update { it.copy(message = result.change.toUserMessage()) }
         }
     }
 
     fun addFavorite(location: SavedLocation) {
-        viewModelScope.launch {
+        launchLocationAction {
             val added = applyLocationChange { locationRepository.addFavorite(location) }
             _uiState.update {
                 it.copy(
@@ -316,22 +320,22 @@ class MainViewModel(
      * forecast of a history entry that this very selection evicted be dropped again.
      */
     fun selectSearchedLocation(location: SavedLocation) {
-        clearSearch()
-        viewModelScope.launch {
+        launchLocationAction {
             applyLocationChange { locationRepository.selectLocation(location) }
+            clearSearch()
         }
     }
 
     /** Removes one entry from the history. */
     fun removeRecentLocation(locationId: String) {
-        viewModelScope.launch {
+        launchLocationAction {
             applyLocationChange { locationRepository.removeRecentLocation(locationId) }
         }
     }
 
     /** Empties the history; favorites, the home location and the appearance stay untouched. */
     fun clearRecentLocations() {
-        viewModelScope.launch {
+        launchLocationAction {
             applyLocationChange { locationRepository.clearRecentLocations() }
             _uiState.update { it.copy(message = UserMessage.HISTORY_CLEARED) }
         }
@@ -342,14 +346,25 @@ class MainViewModel(
      * location, so this can never empty the app of its protected place.
      */
     fun removeLocation(locationId: String) {
-        viewModelScope.launch {
+        launchLocationAction {
             applyLocationChange { locationRepository.removeLocation(locationId) }
         }
     }
 
     fun moveFavorite(locationId: String, delta: Int) {
         // Reordering cannot add or remove a location, so no cache reconciliation is needed.
-        viewModelScope.launch { locationRepository.moveFavorite(locationId, delta) }
+        launchLocationAction { locationRepository.moveFavorite(locationId, delta) }
+    }
+
+    private fun launchLocationAction(action: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                action()
+            } catch (failure: IOException) {
+                Log.w("MainViewModel", "Could not persist location settings", failure)
+                _uiState.update { it.copy(message = UserMessage.LOCATION_SAVE_FAILED) }
+            }
+        }
     }
 
     fun onSearchQueryChange(rawQuery: String) {
@@ -475,9 +490,9 @@ class MainViewModel(
      * replaced, and a widget tap can therefore never rewrite the app's protected place.
      */
     fun showHomeLocation() {
-        viewModelScope.launch {
-            val home = locationRepository.currentSettings().homeLocation ?: return@launch
-            if (home.id == _uiState.value.weather.location?.id) return@launch
+        launchLocationAction {
+            val home = locationRepository.currentSettings().homeLocation ?: return@launchLocationAction
+            if (home.id == _uiState.value.weather.location?.id) return@launchLocationAction
             applyLocationChange { locationRepository.selectLocation(home.id) }
         }
     }
@@ -487,13 +502,12 @@ class MainViewModel(
      * that place left the favourites and the history long ago.
      *
      * Like tapping a search suggestion, viewing it may put the location into the history; it never
-     * becomes a favourite and it never touches the home location. The caller passes a location that
-     * survived the validation of the widget intent, so an intent this app did not create cannot inject
-     * a place the user never chose.
+     * becomes a favourite and it never touches the home location. The caller resolves the place
+     * from the stored configuration of a live widget.
      */
     fun showFixedLocation(location: SavedLocation) {
         if (location.id == _uiState.value.weather.location?.id) return
-        viewModelScope.launch {
+        launchLocationAction {
             applyLocationChange { locationRepository.selectLocation(location) }
         }
     }

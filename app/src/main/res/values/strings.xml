@@ -25,7 +25,8 @@
     <string name="detail_day_length">Tageslänge</string>
     <string name="detail_temperature">Temperatur</string>
     <string name="feels_like_value">Gefühlt %1$s</string>
-    <string name="min_max_today">Min %1$s · Max %2$s</string>
+    <string name="min_max_today">Heute min/max: %1$s</string>
+    <string name="temperature_range_accessibility">Temperatur min/max: %1$s</string>
     <string name="hourly_details_title">Stundendetails</string>
     <string name="content_description_weather_icon">Wettersymbol</string>
 
@@ -144,6 +145,7 @@
     <string name="message_home_location_set">Hauptstandort aktualisiert.</string>
     <string name="message_home_location_protected">Der Hauptstandort ist immer gespeichert.</string>
     <string name="message_history_cleared">Verlauf gelöscht.</string>
+    <string name="message_location_save_failed">Die Ortsänderung konnte nicht gespeichert werden. Bitte versuche es erneut.</string>
 
     <!-- Navigation and settings -->
     <string name="action_settings">Einstellungen</string>
@@ -287,8 +289,6 @@
     <string name="widget_tile_today_range">Min / Max</string>
     <string name="widget_tile_precipitation_probability">Regenw.</string>
     <string name="widget_tile_humidity">Feuchte</string>
-    <string name="widget_minimum">Tiefstwert: %1$s</string>
-    <string name="widget_maximum">Höchstwert: %1$s</string>
 
     <!-- Widget configuration, shown when a widget is added -->
     <string name="action_save">Speichern</string>
@@ -306,4 +306,5 @@
     <string name="widget_configure_mode_unavailable">Derzeit nicht verfügbar</string>
     <string name="widget_configure_no_fixed_location">Bitte wähle zuerst einen Ort aus.</string>
     <string name="widget_configure_failed">Die Widget-Einstellung konnte nicht gespeichert werden.</string>
+    <string name="widget_configure_location_changed">Der gewählte Ort ist nicht mehr verfügbar. Bitte wähle einen Ort aus.</string>
 </resources>

@@ -1,4 +1,4 @@
-﻿package com.example.weatherapp.widget.presentation
+package com.example.weatherapp.widget.presentation
 
 import com.example.weatherapp.domain.model.DailyWeather
 import com.example.weatherapp.domain.model.WeatherCondition
@@ -78,6 +78,13 @@ class ThreeDayWidgetContentTest {
         }
 
     // region states
+
+    @Test
+    fun `temperature data for both widget widths retains both long negative extrema`() {
+        val day = daily(date = LocalDate.of(2026, 12, 3), min = -24.0, max = -12.0)
+        val row = buildThreeDayWidgetContent(data(listOf(day))).days.first()
+        assertEquals("-24/-12$nb°C", row.temperatureRange)
+    }
 
     @Test
     fun `a widget without a location has no rows and no name`() {
@@ -212,7 +219,7 @@ class ThreeDayWidgetContentTest {
     fun `a row carries the temperature range the app uses and the precipitation of the day`() {
         val row = buildThreeDayWidgetContent(data(week())).days.first()
 
-        assertEquals("1\u20138$nb\u00B0C", row.temperatureRange)
+        assertEquals("1/8$nb\u00B0C", row.temperatureRange)
         assertEquals(1.0, row.minTemperatureCelsius!!, 0.001)
         assertEquals(8.0, row.maxTemperatureCelsius!!, 0.001)
         assertEquals("10$nb% · 0${nb}mm", row.precipitationSummary())

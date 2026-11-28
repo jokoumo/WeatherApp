@@ -62,8 +62,10 @@ class WidgetDataProviderTest {
         private val entries = MutableStateFlow(initial)
 
         override val configurations = entries
+        var writeFailure: IOException? = null
 
         override suspend fun saveAll(configurations: Collection<WidgetConfiguration>) {
+            writeFailure?.let { throw it }
             entries.value = entries.value + configurations.associateBy { it.widgetId }
         }
 

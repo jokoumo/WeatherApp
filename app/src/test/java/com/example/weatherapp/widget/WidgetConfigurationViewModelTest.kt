@@ -22,11 +22,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WidgetConfigurationViewModelTest {
     private val settings = FakeSettingsStore()
-    private val configurations = WidgetConfigRepository(WidgetDataProviderTest.FakeWidgetConfigStore())
+    private val store = WidgetDataProviderTest.FakeWidgetConfigStore()
+    private val configurations = WidgetConfigRepository(store)
     private val scheduled = mutableListOf<WidgetConfiguration>()
 
     private fun withViewModel(
@@ -99,5 +101,59 @@ class WidgetConfigurationViewModelTest {
             model.onLocationPicked(hamburg)
             assertEquals(WidgetConfiguration(42, WidgetLocationMode.FIXED, paris), configurations.configuration(42))
             assertTrue(scheduled.isEmpty())
+        }
+
+    @Test
+    fun `a home location disappearing during save unlocks the screen and can be retried`() = withViewModel { model ->
+        settings.save(LocationSettings(homeLocation = hamburg))
+        advanceUntilIdle()
+        model.save()
+        assertTrue(model.uiState.value.isSaving)
+        settings.save(LocationSettings())
+        advanceUntilIdle()
+
+        assertFalse(model.uiState.value.isSaving)
+        assertTrue(model.uiState.value.locationChangedDuringSave)
+        assertNull(configurations.configuration(42))
+        assertTrue(scheduled.isEmpty())
+
+        settings.save(LocationSettings(homeLocation = hamburg))
+        advanceUntilIdle()
+        assertTrue(model.uiState.value.canSave)
+        model.save()
+        advanceUntilIdle()
+        assertEquals(listOf(WidgetConfiguration(42, WidgetLocationMode.HOME)), scheduled)
+    }
+
+    @Test
+    fun `selected location can be saved without a home location`() = withViewModel { model ->
+        settings.save(LocationSettings(recentLocations = listOf(paris), selectedLocationId = paris.id))
+        advanceUntilIdle()
+        model.onModeSelected(WidgetLocationMode.SELECTED)
+        assertTrue(model.uiState.value.canSave)
+        model.save()
+        advanceUntilIdle()
+        assertEquals(listOf(WidgetConfiguration(42, WidgetLocationMode.SELECTED)), scheduled)
+    }
+
+    @Test
+    fun `failed reconfiguration preserves the existing record and allows a single retry`() =
+        withViewModel(initial = WidgetConfiguration(42, WidgetLocationMode.FIXED, paris)) { model ->
+            model.onLocationPicked(hamburg)
+            store.writeFailure = IOException("Write failed")
+            model.save()
+            advanceUntilIdle()
+            assertFalse(model.uiState.value.isSaving)
+            assertTrue(model.uiState.value.canSave)
+            assertTrue(model.uiState.value.saveFailed)
+            assertEquals(paris, configurations.configuration(42)?.fixedLocation)
+            assertTrue(scheduled.isEmpty())
+
+            store.writeFailure = null
+            model.save()
+            model.save()
+            advanceUntilIdle()
+            assertEquals(listOf(WidgetConfiguration(42, WidgetLocationMode.FIXED, hamburg)), scheduled)
+            assertTrue(model.uiState.value.saved)
         }
 }

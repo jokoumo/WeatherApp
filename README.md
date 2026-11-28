@@ -46,6 +46,13 @@ values render as an en dash.
 
 ## Weather presentation
 
+The dashboard, daily cards, period details, extended forecast and widgets use
+`WeatherFormatter.temperatureRange` for minimum and maximum pairs, for example
+`-12/-10 °C`. The pair shares one Celsius unit and preserves German number formatting
+and the existing rounding. Two reported values that round to the same number still form
+a pair. A single reported value is shown on its own, and two missing values show an en dash.
+Clock and date ranges keep their own separators.
+
 Two small, testable classifiers in `domain/model` decide *how* a condition is presented. They
 never change what the API reported, only how it is drawn and worded.
 
@@ -153,7 +160,7 @@ one is computed.
 
 | Value | Rule |
 | --- | --- |
-| Temperature | Minimum and maximum of the available hourly temperatures, printed as `7–12 °C`. One known value is printed alone; a range is never invented. |
+| Temperature | Minimum and maximum of the available hourly temperatures, printed as `7/12 °C`. One known value is printed alone. |
 | Precipitation probability | **Maximum** of the hourly probabilities, labelled "Max. Regenw." — the highest hourly value, not a combined "at some point during the period" probability. Hourly probabilities are never multiplied together. |
 | Precipitation amount | Sum of the hourly amounts inside the period. A period without a single reported amount stays an en dash, and a period whose hourly series is shorter than the period says so in text instead of presenting a partial sum as a total. |
 | Wind | Arithmetic mean of the available sustained hourly wind speeds ("Wind im Mittel"). Missing, negative and non-finite values are ignored. |
@@ -595,16 +602,14 @@ widget palette deliberately does not duplicate the icon palette in
 Icons are the same Flat Color vectors the app draws, with the wind glyph
 overlaid when a wind threshold is exceeded, and the storm colour marks the same warning.
 
-Tapping any part of a widget opens WetterPlus at the location that belongs to it:
-`MainActivity.handleWidgetLaunch` reads the extras the widget put into its own intent (only this app
-can create them) and either selects the home location or shows the pinned place. A tap never changes
-the home location and never favourites anything; showing a pinned place can move it into the
-**history**, exactly like tapping a search suggestion does.
+Tapping a widget opens WetterPlus at its current configured location. The activity resolves the
+live widget ID against the local configuration before selecting a place. Opening a fixed place can
+move it into the history, like a search result. Activity recreation resumes the persisted selection.
 
 ## Versioning
 
-`app/build.gradle.kts` carries the version: `versionName = "1.2.1"` in `MAJOR.MINOR.PATCH` form
-and a positive `versionCode` that only ever increases (currently 6, because the first published
+`app/build.gradle.kts` carries the version: `versionName = "1.2.2"` in `MAJOR.MINOR.PATCH` form
+and a positive `versionCode` that only ever increases (currently 7, because the first published
 build of this repository was 1). The About screen does not repeat those numbers: it reads
 `PackageInfo.versionName` and `longVersionCode` from the installed package, so the displayed
 values cannot drift away from the build that is actually running.
@@ -620,6 +625,47 @@ compatible, PATCH for fixes, and `versionCode` increases by one per published bu
 | 1.1.1 | 4 | Stabilization of that workflow, no new features: the home location can no longer be un-set and is refused by the delete path, a newly selected place is named immediately while its weather loads, cached forecasts of places that left the history are removed instead of accumulating, the favorite star now toggles atomically (two quick taps are two real changes), and stored locations are normalized when they are read. |
 | 1.2.0 | 5 | Three home-screen widgets: **Aktuelles Wetter** with up to nine information tiles, **Tagesverlauf** with four rolling day periods, and **3-Tage-Vorschau**. Every instance is configured on its own (home location, current location or a pinned place), they share one WorkManager schedule and the existing cache, and a pinned place keeps its cached forecast even after it left favourites and history. The widget configuration lives in its own DataStore file and is included in the Android backup. |
 | 1.2.1 | 6 | First placement loads cached weather and refreshes the correct instance. Configuration validates locations and keeps actions visible. All three widgets have two-cell layouts and launcher previews. |
+| 1.2.2 | 7 | Slash-separated temperature ranges, recoverable location and widget configuration saves, forecast and cache validation, stable appearance changes and safer widget navigation. |
+
+## Reliability audit for 1.2.2
+
+The code review covered startup and screen restoration, location roles and search, DTO mapping and
+request cancellation, absolute timestamps and local aggregation, DataStore and Room, backup rules,
+widget lifecycle and WorkManager, and the range layout and accessibility paths. Regressions cover
+the corrected behavior alongside the existing navigation, DST, location retention and widget suites.
+
+| Finding | Severity | Correction and coverage |
+| --- | --- | --- |
+| An I/O failure during a location mutation escaped the ViewModel and could terminate the app. | Critical | Report a German retry message and preserve setup search results. A deterministic failed setup test verifies recovery. |
+| Forecast periods containing only timestamps made an otherwise empty response cacheable. | High | Drop measurement-free rows and reject unusable cached responses. A repository regression verifies that a useful previous forecast survives. |
+| Rejecting a corrupt cache row could delete a good replacement written after the read. | Medium | Delete only the exact row inspected. A Room regression exercises a replacement with the same fetch timestamp. |
+| Dashboard and widget loads of the same location could fetch independently, and cancelled cache reads could fall through to the API. | Medium | Share per-location synchronization in the weather repository and propagate cancellation. Gated concurrent loads and cancelled storage reads have regression tests. |
+| Earlier appearance writes could briefly replace a newer choice or report a failure for it. | Medium | Serialize writes and associate feedback with the current selection. A gated-write test checks the intermediate UI state. |
+| Geocoding accepted out-of-bounds coordinates, a malformed integer offset could wrap into a valid one, and reported zero sunshine or daylight was rendered as unavailable. | Medium | Validate coordinates and offsets before conversion and keep real zero durations. Mapper and formatter tests cover each input. |
+| Cache coverage could expire before the last hourly interval ended in a fractional-offset zone. | Medium | Check the end of the absolute interval. A Kathmandu regression verifies reuse up to the boundary and refresh at expiration. |
+| Long negative pairs could overflow dense outlook rows at narrow widths and increased font scale. | Medium | Give the range its own line when needed. An instrumented layout test checks a 245 dp dark layout at 150% font scale. |
+| Dashboard detail sheets could outlive a location switch, and activity recreation could replay a prior widget launch. Widget taps also trusted location values supplied through an activity intent. | Medium | Scope sheet selection to the displayed location, handle widget launch on initial creation or a new intent, and resolve locations from a currently bound widget's stored record. UI and DataStore tests cover location switches and intent resolution. |
+| The hourly effect remained active in a composed but stopped activity. | Medium | Run the clock effect only while the lifecycle is started. Foreground and date rollover behavior retain the existing deterministic ViewModel coverage. |
+| A prerequisite could disappear while widget Save was pending. The suspected self-rejection was not reproduced because the old code captured state before setting the saving flag. | Medium | Separate location validity from button state, restore the Save controls with specific feedback, and preserve the prior configuration if storage fails. Tests cover prerequisite changes, valid modes, failed reconfiguration, and retry. |
+
+Widget configuration backup is still keyed by Android App Widget ID. A launcher restore that
+assigns different IDs remains an unverified cross-device risk.
+[Android widget restore contract](https://developer.android.com/reference/android/appwidget/AppWidgetProvider#onRestored(android.content.Context,int%5B%5D,int%5B%5D))
+Cache cleanup across location
+preferences and the forecast database is best-effort because the stores do not share a transaction.
+WorkManager and launcher timing remain system-controlled.
+
+On the API 37 emulator, live Berlin forecasts showed the new format on the dashboard, daily
+cards, period sheet and extended outlook. All three widgets initialized and rendered at both
+supported widths. In airplane mode the compact three-day widget and dashboard rendered cached
+Berlin data. Changing the dashboard to Tromsø updated the following widget, while the fixed
+Berlin widget kept its location and opened Berlin when tapped. After that launch, selecting
+Tromsø and recreating the activity at 150% system font scale preserved the newer selection.
+With no active network, a cold start after force-stopping the app restored Tromsø and displayed
+its cached forecast. All 449 unit tests and 179 instrumented tests passed. Android lint reported
+zero errors and 15 existing warnings, and `assembleDebug` produced the installable APK.
+Verification screenshots are in
+`app/build/verify/wetterplus-1.2.2/`.
 
 ## Privacy, local storage and backup
 

@@ -16,6 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.weatherapp.domain.millisUntilNextHour
 import com.example.weatherapp.ui.about.AboutContent
 import com.example.weatherapp.ui.about.AboutScreen
@@ -67,12 +70,15 @@ fun WeatherRoot(
     // while the UI is composed, so nothing ticks in the background, and the view model rebuilds
     // the window from the snapshot it already has instead of loading the forecast again.
     val hourlyZone = state.weather.timeZone
-    LaunchedEffect(hourlyZone) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(hourlyZone, lifecycle) {
         val zone = hourlyZone ?: return@LaunchedEffect
-        viewModel.onClockTick()
-        while (isActive) {
-            delay(millisUntilNextHour(Instant.now(), zone))
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             viewModel.onClockTick()
+            while (isActive) {
+                delay(millisUntilNextHour(Instant.now(), zone))
+                viewModel.onClockTick()
+            }
         }
     }
 
@@ -90,6 +96,7 @@ fun WeatherRoot(
         !state.settings.hasSelectableLocation -> LocationSetupScreen(
             search = state.search,
             onQueryChange = viewModel::onSearchQueryChange,
+            locationSaveFailed = state.message == UserMessage.LOCATION_SAVE_FAILED,
             onLocationChosen = { location ->
                 // setHomeLocation also selects the new home location, so no extra selection
                 // call is needed here.
