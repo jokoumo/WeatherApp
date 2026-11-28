@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.await
 import com.example.weatherapp.WeatherApplication
 import com.example.weatherapp.domain.CachePolicy
 import kotlinx.coroutines.Dispatchers
@@ -49,8 +50,11 @@ class WidgetRefreshSchedulingTest {
 
     private suspend fun cancelWidgetWork() {
         withContext(Dispatchers.IO) {
-            workManager.cancelUniqueWork(WidgetRefreshCoordinator.UPDATE_WORK_NAME)
-            workManager.cancelUniqueWork(WidgetRefreshCoordinator.PERIODIC_WORK_NAME)
+            workManager.cancelUniqueWork(WidgetRefreshCoordinator.UPDATE_WORK_NAME).await()
+            workManager.cancelUniqueWork(WidgetRefreshCoordinator.PERIODIC_WORK_NAME).await()
+            for (widgetId in 9001..9003) {
+                workManager.cancelUniqueWork(WidgetRefreshCoordinator.initialWorkName(widgetId)).await()
+            }
         }
     }
 
@@ -71,26 +75,29 @@ class WidgetRefreshSchedulingTest {
     @Test
     fun severalWidgetsShareOneRefreshJob() = runBlocking {
         val coordinator = coordinator()
+        val name = WidgetRefreshCoordinator.UPDATE_WORK_NAME
+        val priorIds = infosOf(name).map { it.id }.toSet()
 
         repeat(3) { coordinator.requestWidgetUpdate() }
 
-        val infos = liveInfos(WidgetRefreshCoordinator.UPDATE_WORK_NAME)
-        assertEquals(
-            "one refresh job for all widgets, found ${infos.map { it.state }}",
-            1,
-            infos.size,
-        )
+        val requested = infosOf(name).filterNot { it.id in priorIds }
+        assertTrue("the shared refresh was scheduled", requested.isNotEmpty())
+        assertTrue("at most one active refresh", requested.count { !it.state.isFinished } <= 1)
     }
 
     @Test
     fun aRepeatedRequestDoesNotStackUp() = runBlocking {
         val coordinator = coordinator()
+        val name = WidgetRefreshCoordinator.UPDATE_WORK_NAME
+        val priorIds = infosOf(name).map { it.id }.toSet()
 
         coordinator.requestWidgetUpdate()
         coordinator.requestWidgetUpdate(forceRefresh = true)
         coordinator.requestWidgetUpdate()
 
-        assertEquals(1, liveInfos(WidgetRefreshCoordinator.UPDATE_WORK_NAME).size)
+        val requested = infosOf(name).filterNot { it.id in priorIds }
+        assertTrue("a new refresh was scheduled", requested.isNotEmpty())
+        assertTrue("at most one active refresh", requested.count { !it.state.isFinished } <= 1)
     }
 
     /** All three widget types are served by one periodic job, never one per type or instance. */
@@ -167,12 +174,11 @@ class WidgetRefreshSchedulingTest {
 
         coordinator().onWidgetConfigured(9001)
 
-        val update = liveInfos(WidgetRefreshCoordinator.UPDATE_WORK_NAME)
-        assertEquals(
-            "the configured widget is refreshed at once, found ${update.map { it.state }}",
-            1,
-            update.size,
-        )
+        val first = infosOf(WidgetRefreshCoordinator.initialWorkName(9001)).last()
+        coordinator().onWidgetConfigured(9002)
+        val second = infosOf(WidgetRefreshCoordinator.initialWorkName(9002)).last()
+        assertTrue(first.id != second.id)
+        assertTrue(infosOf(WidgetRefreshCoordinator.initialWorkName(9001)).any { it.id == first.id })
         assertEquals(1, liveInfos(WidgetRefreshCoordinator.PERIODIC_WORK_NAME).size)
     }
 }

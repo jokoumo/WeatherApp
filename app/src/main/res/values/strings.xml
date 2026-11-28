@@ -279,18 +279,20 @@
     <string name="widget_day_today">Heute</string>
     <!-- The age itself is phrased by WeatherFormatter.relativeTime ("vor 12 Minuten"), so the label only
          introduces it; the stale variant adds the same warning the app shows for an old response. -->
-    <string name="widget_last_updated_stale">Zuletzt aktualisiert: %1$s – Daten können veraltet sein</string>
+    <string name="widget_last_updated">Stand: %1$s</string>
+    <string name="widget_last_updated_stale">Gespeichert: %1$s</string>
     <string name="widget_no_data">Derzeit sind keine Wetterdaten verfügbar.</string>
     <string name="widget_no_location">Kein Ort eingestellt. Öffne WetterPlus und wähle dort den Ort dieses Widgets.</string>
     <string name="widget_period_no_data">Keine Stundendaten</string>
-    <string name="widget_period_no_precipitation">Kein Niederschlag erwartet</string>
-    <string name="widget_tile_today_range">Heute min / max</string>
+    <string name="widget_tile_today_range">Min / Max</string>
     <string name="widget_tile_precipitation_probability">Regenw.</string>
+    <string name="widget_tile_humidity">Feuchte</string>
+    <string name="widget_minimum">Tiefstwert: %1$s</string>
+    <string name="widget_maximum">Höchstwert: %1$s</string>
 
     <!-- Widget configuration, shown when a widget is added -->
     <string name="action_save">Speichern</string>
     <string name="widget_configure_title">Widget einrichten</string>
-    <string name="widget_configure_intro">Welchen Ort soll dieses Widget zeigen?</string>
     <string name="widget_mode_home">Hauptstandort</string>
     <string name="widget_mode_home_description">Zeigt immer den Hauptstandort der App.</string>
     <string name="widget_mode_selected">Aktueller Ort</string>
@@ -298,9 +300,10 @@
     <string name="widget_mode_fixed">Fester Ort</string>
     <string name="widget_mode_fixed_description">Zeigt immer diesen Ort – auch wenn er nicht mehr in der App gespeichert ist.</string>
     <string name="widget_configure_stored_locations">Gespeicherte Orte</string>
-    <string name="widget_configure_other_location">Anderer Ort</string>
     <string name="widget_configure_fixed_selected">Ausgewählt: %1$s</string>
-    <string name="widget_configure_no_home">Dieses Widget zeigt den Hauptstandort. Lege zuerst in WetterPlus einen Hauptstandort fest.</string>
+    <string name="widget_configure_no_home">Lege zuerst in WetterPlus einen Hauptstandort fest oder wähle für das Widget einen festen Ort.</string>
+    <string name="widget_configure_no_selected">Wähle zuerst in WetterPlus einen Ort aus oder verwende für das Widget einen festen Ort.</string>
+    <string name="widget_configure_mode_unavailable">Derzeit nicht verfügbar</string>
     <string name="widget_configure_no_fixed_location">Bitte wähle zuerst einen Ort aus.</string>
     <string name="widget_configure_failed">Die Widget-Einstellung konnte nicht gespeichert werden.</string>
 </resources>

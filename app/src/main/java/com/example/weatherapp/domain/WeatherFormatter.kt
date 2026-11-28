@@ -163,10 +163,13 @@ object WeatherFormatter {
     fun relativeTime(fetchedAt: Instant, now: Instant): String {
         val age = Duration.between(fetchedAt, now).abs()
         val minutes = age.toMinutes()
+        val hours = age.toHours()
         return when {
             age.seconds < 60 -> "gerade eben"
+            minutes == 1L -> "vor 1 Minute"
             minutes < 60 -> "vor $minutes Minuten"
-            age.toHours() < 24 -> "vor ${age.toHours()} Stunden"
+            hours == 1L -> "vor 1 Stunde"
+            hours < 24 -> "vor $hours Stunden"
             age.toDays() == 1L -> "gestern"
             else -> "vor ${age.toDays()} Tagen"
         }

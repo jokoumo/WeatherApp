@@ -13,12 +13,14 @@ import androidx.compose.runtime.getValue
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.example.weatherapp.domain.model.resolveDarkTheme
 import com.example.weatherapp.ui.MainViewModel
 import com.example.weatherapp.ui.WeatherRoot
 import com.example.weatherapp.ui.theme.WeatherAppTheme
 import com.example.weatherapp.widget.WidgetLaunch
 import com.example.weatherapp.widget.WidgetLocationMode
+import kotlinx.coroutines.launch
 
 /**
  * Single activity host.
@@ -81,6 +83,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.onForeground()
+        lifecycleScope.launch { container.widgetRefreshCoordinator.requestWidgetUpdate() }
     }
 
     /** True while the Android system itself is in dark mode. */

@@ -1,11 +1,14 @@
 package com.example.weatherapp.widget
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.weatherapp.data.repository.LocationRepository
 import com.example.weatherapp.domain.model.SavedLocation
+import com.example.weatherapp.domain.model.LocationSettings
 import com.example.weatherapp.ui.SearchUiState
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,15 +23,31 @@ data class WidgetConfigurationUiState(
     val storedLocations: List<SavedLocation> = emptyList(),
     /** False on a fresh install: a "Hauptstandort" widget would then have nothing to show. */
     val hasHomeLocation: Boolean = false,
+    val hasSelectedLocation: Boolean = false,
     val search: SearchUiState = SearchUiState(),
     /** Set once the configuration is in storage; the activity closes the screen on it. */
     val saved: Boolean = false,
     val saveFailed: Boolean = false,
+    val isSaving: Boolean = false,
+    val isReady: Boolean = true,
 ) {
-    /** A fixed-location widget without a place has nothing to show, so it cannot be saved yet. */
     val canSave: Boolean
-        get() = mode != WidgetLocationMode.FIXED || fixedLocation != null
+        get() = isReady && !isSaving && !saved && when (mode) {
+            WidgetLocationMode.HOME -> hasHomeLocation
+            WidgetLocationMode.SELECTED -> hasSelectedLocation
+            WidgetLocationMode.FIXED -> fixedLocation.isValidWidgetLocation()
+        }
+
+    internal fun withSettings(settings: LocationSettings): WidgetConfigurationUiState = copy(
+        storedLocations = settings.selectableLocations.filter { it.isValidWidgetLocation() },
+        hasHomeLocation = settings.homeLocation.isValidWidgetLocation(),
+        hasSelectedLocation = settings.resolveSelectedLocation().isValidWidgetLocation(),
+    )
 }
+
+private fun SavedLocation?.isValidWidgetLocation(): Boolean =
+    this != null && id.isNotBlank() && name.isNotBlank() &&
+        latitude in -90.0..90.0 && longitude in -180.0..180.0
 
 /**
  * Owns the state of the widget configuration screen for exactly one App Widget id.
@@ -42,27 +61,29 @@ class WidgetConfigurationViewModel(
     private val widgetId: Int,
     private val locationRepository: LocationRepository,
     private val widgetConfigRepository: WidgetConfigRepository,
-    private val widgetRefreshCoordinator: WidgetRefreshCoordinator,
+    private val widgetConfigured: suspend (Int) -> Unit,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(WidgetConfigurationUiState())
+    private val _uiState = MutableStateFlow(WidgetConfigurationUiState(isReady = false))
     val uiState = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
 
     init {
         viewModelScope.launch {
-            val settings = locationRepository.currentSettings()
-            _uiState.update {
-                it.copy(
-                    storedLocations = settings.selectableLocations,
-                    hasHomeLocation = settings.homeLocation != null,
-                )
+            val configuration = widgetConfigRepository.configuration(widgetId)
+            _uiState.update { state ->
+                state.copy(mode = configuration?.mode ?: state.mode, fixedLocation = configuration?.fixedLocation)
+            }
+            locationRepository.settings.collect { settings ->
+                _uiState.update { it.withSettings(settings).copy(isReady = true) }
             }
         }
     }
 
     fun onModeSelected(mode: WidgetLocationMode) {
+        if (!_uiState.value.isReady || _uiState.value.isSaving) return
+        if (mode != WidgetLocationMode.FIXED) clearSearch()
         _uiState.update { it.copy(mode = mode, saveFailed = false) }
     }
 
@@ -109,6 +130,8 @@ class WidgetConfigurationViewModel(
      * because picking a place only ever means "this widget shows this place, whatever the app does".
      */
     fun onLocationPicked(location: SavedLocation) {
+        if (_uiState.value.isSaving || !location.isValidWidgetLocation()) return
+        clearSearch()
         _uiState.update {
             it.copy(mode = WidgetLocationMode.FIXED, fixedLocation = location, saveFailed = false)
         }
@@ -123,12 +146,15 @@ class WidgetConfigurationViewModel(
      */
     fun save() {
         val state = _uiState.value
-        if (!state.canSave) {
-            _uiState.update { it.copy(saveFailed = true) }
-            return
-        }
+        if (!state.canSave) return
+        _uiState.update { it.copy(isSaving = true, saveFailed = false) }
         viewModelScope.launch {
-            runCatching {
+            try {
+                val validated = state.withSettings(locationRepository.currentSettings())
+                if (!validated.canSave) {
+                    _uiState.update { validated }
+                    return@launch
+                }
                 widgetConfigRepository.save(
                     WidgetConfiguration(
                         widgetId = widgetId,
@@ -136,18 +162,26 @@ class WidgetConfigurationViewModel(
                         fixedLocation = state.fixedLocation.takeIf { state.mode == WidgetLocationMode.FIXED },
                     ),
                 )
-            }.onSuccess {
-                // Handed over before the screen closes: the activity finishes as soon as this state
-                // says "saved", and viewModelScope ends with the ViewModel.
-                widgetRefreshCoordinator.onWidgetConfigured(widgetId)
-                _uiState.update { it.copy(saved = true) }
-            }.onFailure {
-                _uiState.update { it.copy(saveFailed = true) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w(TAG, "Could not save widget configuration", failure)
+                _uiState.update { it.copy(isSaving = false, saveFailed = true) }
+                return@launch
             }
+            try {
+                widgetConfigured(widgetId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w(TAG, "Could not schedule the initial widget refresh", failure)
+            }
+            _uiState.update { it.copy(saved = true, isSaving = false) }
         }
     }
 
     private companion object {
         const val SEARCH_DEBOUNCE_MILLIS = 300L
+        const val TAG = "WidgetConfiguration"
     }
 }

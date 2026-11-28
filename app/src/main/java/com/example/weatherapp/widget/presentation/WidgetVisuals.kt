@@ -80,7 +80,7 @@ object WidgetPalette {
     val tileCornerRadius: Dp = 10.dp
 
     /** Surface padding, kept large enough that no text touches the rounded corner. */
-    val outerPadding: Dp = 10.dp
+    val outerPadding: Dp = 8.dp
 
     /** Typography, in sp so the system font scale is respected. */
     val headlineSize: TextUnit = 14.sp
@@ -90,42 +90,36 @@ object WidgetPalette {
 
     /** Location name of the header: the one text a widget always has room for. */
     fun headerTitleSize(sizeClass: WidgetSizeClass): TextUnit = when (sizeClass) {
-        WidgetSizeClass.COMPACT -> 12.sp
-        WidgetSizeClass.MEDIUM -> 13.sp
-        WidgetSizeClass.EXPANDED -> 14.sp
+        WidgetSizeClass.COMPACT -> 14.sp
+        WidgetSizeClass.EXPANDED -> 16.sp
     }
 
     /** Value text of a row or a tile. */
     fun bodySizeFor(sizeClass: WidgetSizeClass): TextUnit = when (sizeClass) {
-        WidgetSizeClass.COMPACT -> 11.sp
-        WidgetSizeClass.MEDIUM -> 12.sp
+        WidgetSizeClass.COMPACT -> 12.sp
         WidgetSizeClass.EXPANDED -> 13.sp
     }
 
     /** Small secondary text: dates, time ranges, the update line. */
     fun secondarySizeFor(sizeClass: WidgetSizeClass): TextUnit = when (sizeClass) {
-        WidgetSizeClass.COMPACT -> 9.sp
-        WidgetSizeClass.MEDIUM -> 10.sp
-        WidgetSizeClass.EXPANDED -> 10.sp
+        WidgetSizeClass.COMPACT -> 11.sp
+        WidgetSizeClass.EXPANDED -> 11.sp
     }
 
     fun temperatureSize(sizeClass: WidgetSizeClass): TextUnit = when (sizeClass) {
-        WidgetSizeClass.COMPACT -> 24.sp
-        WidgetSizeClass.MEDIUM -> 30.sp
-        WidgetSizeClass.EXPANDED -> 38.sp
+        WidgetSizeClass.COMPACT -> 29.sp
+        WidgetSizeClass.EXPANDED -> 34.sp
     }
 
     /** Large symbol of the current weather widget. */
     fun iconSize(sizeClass: WidgetSizeClass): Dp = when (sizeClass) {
         WidgetSizeClass.COMPACT -> 38.dp
-        WidgetSizeClass.MEDIUM -> 52.dp
-        WidgetSizeClass.EXPANDED -> 64.dp
+        WidgetSizeClass.EXPANDED -> 56.dp
     }
 
     /** Symbol inside a row of the period and three-day layouts. */
     fun rowIconSize(sizeClass: WidgetSizeClass): Dp = when (sizeClass) {
-        WidgetSizeClass.COMPACT -> 18.dp
-        WidgetSizeClass.MEDIUM -> 22.dp
+        WidgetSizeClass.COMPACT -> 22.dp
         WidgetSizeClass.EXPANDED -> 28.dp
     }
 }
@@ -187,7 +181,7 @@ fun WidgetHeader(
         updatedAgo?.let {
             Text(
                 text = widgetString(
-                    if (stale) R.string.widget_last_updated_stale else R.string.last_updated,
+                    if (stale) R.string.widget_last_updated_stale else R.string.widget_last_updated,
                     it,
                 ),
                 maxLines = 2,

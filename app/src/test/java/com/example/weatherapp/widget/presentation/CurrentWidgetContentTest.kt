@@ -1,4 +1,4 @@
-﻿package com.example.weatherapp.widget.presentation
+package com.example.weatherapp.widget.presentation
 
 import com.example.weatherapp.domain.model.CurrentWeather
 import com.example.weatherapp.domain.model.DailyWeather
@@ -170,7 +170,7 @@ class CurrentWidgetContentTest {
 
     @Test
     fun `the age of the response is shown from the fetch time`() {
-        val content = buildCurrentWidgetContent(data(), WidgetSizeClass.MEDIUM)
+        val content = buildCurrentWidgetContent(data(), WidgetSizeClass.EXPANDED)
 
         assertEquals("vor 12 Minuten", content.updatedAgo)
     }
@@ -191,7 +191,7 @@ class CurrentWidgetContentTest {
             now = fetchedAtEpoch,
         )
 
-        assertEquals("gerade eben", buildCurrentWidgetContent(fresh, WidgetSizeClass.MEDIUM).updatedAgo)
+        assertEquals("gerade eben", buildCurrentWidgetContent(fresh, WidgetSizeClass.EXPANDED).updatedAgo)
     }
 
     // endregion
@@ -199,50 +199,21 @@ class CurrentWidgetContentTest {
     // region which tiles, in which size
 
     @Test
-    fun `the expanded layout shows all nine metrics the response supports`() {
+    fun `the expanded layout shows four prioritized metrics`() {
         val content = buildCurrentWidgetContent(data(), WidgetSizeClass.EXPANDED)
 
         assertEquals(
-            listOf(
-                WidgetMetric.TODAY_RANGE,
-                WidgetMetric.HUMIDITY,
-                WidgetMetric.PRECIPITATION_PROBABILITY,
-                WidgetMetric.PRECIPITATION,
-                WidgetMetric.WIND,
-                WidgetMetric.WIND_GUSTS,
-                WidgetMetric.PRESSURE,
-                WidgetMetric.CLOUD_COVER,
-                WidgetMetric.WIND_DIRECTION,
-            ),
+            listOf(WidgetMetric.HUMIDITY, WidgetMetric.WIND, WidgetMetric.TODAY_RANGE, WidgetMetric.PRECIPITATION_PROBABILITY),
             metrics(content),
         )
     }
 
     @Test
-    fun `the medium layout shows the four metrics it has room for`() {
-        val content = buildCurrentWidgetContent(data(), WidgetSizeClass.MEDIUM)
-
-        assertEquals(
-            listOf(
-                WidgetMetric.TODAY_RANGE,
-                WidgetMetric.HUMIDITY,
-                WidgetMetric.PRECIPITATION_PROBABILITY,
-                WidgetMetric.PRECIPITATION,
-            ),
-            metrics(content),
-        )
-    }
-
-    @Test
-    fun `the compact layout has no grid but two values next to the temperature`() {
+    fun `the compact layout prioritizes humidity and wind`() {
         val content = buildCurrentWidgetContent(data(), WidgetSizeClass.COMPACT)
 
-        assertTrue(content.tiles.isEmpty())
-        assertEquals(2, content.headlineValues.size)
-        // Same preference as the grids: the values a reader would miss least are temperature extremes
-        // and humidity.
-        assertEquals("2\u20139$nb\u00B0C", content.headlineValues.first())
-        assertEquals("80$nb%", content.headlineValues[1])
+        assertEquals(listOf(WidgetMetric.HUMIDITY, WidgetMetric.WIND), metrics(content))
+        assertEquals("80$nb%", content.tiles.first().value)
     }
 
     @Test
@@ -256,8 +227,8 @@ class CurrentWidgetContentTest {
 
         assertEquals(
             listOf(
-                WidgetMetric.PRECIPITATION,
                 WidgetMetric.WIND,
+                WidgetMetric.PRECIPITATION,
                 WidgetMetric.WIND_GUSTS,
             ),
             metrics(content),
@@ -355,11 +326,11 @@ class CurrentWidgetContentTest {
     fun `the condition label and the icon follow the current condition including its intensity`() {
         val drizzle = buildCurrentWidgetContent(
             data(current = current(condition = WeatherCondition.LIGHT_DRIZZLE)),
-            WidgetSizeClass.MEDIUM,
+            WidgetSizeClass.EXPANDED,
         )
         val clear = buildCurrentWidgetContent(
             data(current = current(condition = WeatherCondition.CLEAR_DAY)),
-            WidgetSizeClass.MEDIUM,
+            WidgetSizeClass.EXPANDED,
         )
 
         assertTrue(drizzle.conditionLabelRes != clear.conditionLabelRes)

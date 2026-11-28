@@ -40,8 +40,10 @@ class WidgetSystemEventReceiver : BroadcastReceiver() {
                     // because a restored or partially removed home screen would otherwise keep a stale
                     // configuration - and with it the forecast of a place nobody looks at any more.
                     coordinator.pruneStaleConfigurations()
+                    coordinator.requestWidgetUpdate()
+                } else {
+                    coordinator.redrawFromCache()
                 }
-                coordinator.requestWidgetUpdate()
             } catch (failure: Exception) {
                 Log.w(TAG, "Widget refresh after system event failed", failure)
             } finally {

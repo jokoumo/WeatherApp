@@ -16,8 +16,12 @@ import com.example.weatherapp.testing.sampleForecastDto
 import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.data.repository.LocationRepository
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -30,6 +34,9 @@ import java.io.IOException
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import com.example.weatherapp.widget.presentation.WidgetState
+import com.example.weatherapp.widget.presentation.WidgetSizeClass
+import com.example.weatherapp.widget.presentation.buildCurrentWidgetContent
 
 /**
  * How widgets get their data: one request per place no matter how many widgets show it, the cache
@@ -38,6 +45,7 @@ import java.time.LocalDate
  * The widget layer deliberately owns no second cache and no second policy, so this file tests the
  * combination rather than new rules.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class WidgetDataProviderTest {
 
     private val now: Instant = Instant.parse("2026-11-22T11:00:00Z")
@@ -48,7 +56,7 @@ class WidgetDataProviderTest {
     private val weatherRepository = WeatherRepository(api, cache, mapper, clock)
 
     /** In-memory stand-in for the persisted widget configuration. */
-    private class FakeWidgetConfigStore(
+    internal class FakeWidgetConfigStore(
         initial: Map<Int, WidgetConfiguration> = emptyMap(),
     ) : WidgetConfigStore {
         private val entries = MutableStateFlow(initial)
@@ -86,6 +94,82 @@ class WidgetDataProviderTest {
 
     /** A widget update for a place that exists always carries data; a test failure says so clearly. */
     private fun WidgetData?.orFail(): WidgetData = requireNotNull(this)
+
+    @Test
+    fun `an already running first widget observes configuration loading and network success`() = runTest {
+        val store = FakeWidgetConfigStore()
+        val repository = WidgetConfigRepository(store)
+        val provider = WidgetDataProvider(
+            LocationRepository(FakeSettingsStore(), FakeGeocodingApi()), weatherRepository, repository, clock,
+        )
+        val updates = Channel<WidgetDataProvider.Rendering>(Channel.UNLIMITED)
+        backgroundScope.launch { provider.rendering(1).collect { updates.send(it) } }
+        assertNull(updates.receive().configuration)
+
+        provider.markRefreshing(listOf(hamburg.id))
+        repository.save(WidgetConfiguration(1, WidgetLocationMode.FIXED, hamburg))
+        val loading = updates.receive().data.orFail()
+        assertEquals(WidgetState.LOADING, buildCurrentWidgetContent(loading, WidgetSizeClass.COMPACT).state)
+        assertEquals(0, api.callCount)
+
+        val result = provider.loadForLocation(hamburg)
+        provider.publishRefresh(hamburg.id, result.failure, setOf(hamburg.id))
+        val updated = updates.receive().data.orFail()
+        assertEquals(WidgetState.READY, buildCurrentWidgetContent(updated, WidgetSizeClass.COMPACT).state)
+        assertEquals(hamburg.id, updated.location.id)
+        assertEquals(1, api.callCount)
+    }
+
+    @Test
+    fun `cache-only rendering isolates two ids and preserves a cached location after failure`() = runTest {
+        seedCache(Duration.ofMinutes(45))
+        val (provider, _) = providerWith(
+            LocationSettings(),
+            mapOf(
+                1 to WidgetConfiguration(1, WidgetLocationMode.FIXED, hamburg),
+                2 to WidgetConfiguration(2, WidgetLocationMode.FIXED, paris),
+            ),
+        )
+        assertTrue(provider.rendering(1).first().data.orFail().hasData)
+        assertFalse(provider.rendering(2).first().data.orFail().hasData)
+        assertEquals(0, api.callCount)
+
+        api.thrown = IOException("offline")
+        val active = setOf(hamburg.id, paris.id)
+        provider.publishRefresh(hamburg.id, provider.loadForLocation(hamburg).failure, active)
+        provider.markRefreshing(listOf(paris.id))
+        provider.publishRefresh(paris.id, provider.loadForLocation(paris).failure, active)
+        assertTrue(provider.rendering(1).first().data.orFail().isShowingStaleData)
+        val unavailable = provider.rendering(2).first().data.orFail()
+        assertEquals(WidgetState.NO_DATA, buildCurrentWidgetContent(unavailable, WidgetSizeClass.COMPACT).state)
+
+        api.thrown = null
+        provider.publishRefresh(paris.id, provider.loadForLocation(paris).failure, active)
+        assertTrue(provider.rendering(2).first().data.orFail().hasData)
+    }
+
+    @Test
+    fun `late refresh after reconfiguration or deletion cannot replace the active widget location`() = runTest {
+        val settings = LocationRepository(FakeSettingsStore(), FakeGeocodingApi())
+        val repository = WidgetConfigRepository(FakeWidgetConfigStore())
+        val provider = WidgetDataProvider(settings, weatherRepository, repository, clock)
+        repository.save(WidgetConfiguration(1, WidgetLocationMode.FIXED, hamburg))
+        repository.save(WidgetConfiguration(2, WidgetLocationMode.FIXED, paris))
+
+        api.gate = CompletableDeferred()
+        val inFlight = async { provider.loadForLocation(hamburg) }
+        runCurrent()
+        repository.save(WidgetConfiguration(1, WidgetLocationMode.FIXED, paris))
+        repository.remove(listOf(2))
+        api.gate?.complete(Unit)
+        val result = inFlight.await()
+        val stillActive = provider.locationsByWidget(setOf(1, 2))
+        provider.publishRefresh(hamburg.id, result.failure, stillActive.values.map { it.id }.toSet())
+
+        assertEquals(mapOf(1 to paris), stillActive)
+        assertEquals(paris, provider.rendering(1).first().data?.location)
+        assertNull(provider.rendering(2).first().configuration)
+    }
 
     // region one request per place
 

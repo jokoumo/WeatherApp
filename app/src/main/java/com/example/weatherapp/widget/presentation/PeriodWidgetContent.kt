@@ -70,7 +70,7 @@ fun buildPeriodWidgetContent(data: WidgetData?): PeriodWidgetContent {
     val snapshot = data.snapshot
     if (snapshot == null || snapshot.hourly.isEmpty()) {
         return PeriodWidgetContent(
-            state = WidgetState.NO_DATA,
+            state = if (data.awaitingFirstForecast) WidgetState.LOADING else WidgetState.NO_DATA,
             locationName = location.name,
             updatedAgo = data.updatedAgoOrNull(),
         )

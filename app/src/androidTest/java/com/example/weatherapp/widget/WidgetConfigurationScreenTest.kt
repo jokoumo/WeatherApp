@@ -8,6 +8,7 @@ import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.weatherapp.R
@@ -56,6 +57,7 @@ class WidgetConfigurationScreenTest {
         fixedLocation: SavedLocation? = null,
         storedLocations: List<SavedLocation> = listOf(hamburg, tokyo),
         hasHomeLocation: Boolean = true,
+        hasSelectedLocation: Boolean = true,
         search: SearchUiState = SearchUiState(),
         saveFailed: Boolean = false,
     ) {
@@ -71,6 +73,7 @@ class WidgetConfigurationScreenTest {
                         fixedLocation = fixedLocation,
                         storedLocations = storedLocations,
                         hasHomeLocation = hasHomeLocation,
+                        hasSelectedLocation = hasSelectedLocation,
                         search = search,
                         saveFailed = saveFailed,
                     ),
@@ -159,21 +162,46 @@ class WidgetConfigurationScreenTest {
     }
 
     @Test
-    fun aHomeWidgetWithoutAHomeLocationExplainsWhatItWillShow() {
+    fun aHomeWidgetWithoutAHomeLocationExplainsWhySavingIsUnavailable() {
         render(mode = WidgetLocationMode.HOME, hasHomeLocation = false)
 
         composeRule.onNodeWithText(context.getString(R.string.widget_configure_no_home)).assertIsDisplayed()
-        // The widget can still be placed: it shows its own note until the app has a home location,
-        // which is kinder than a Save button that cannot be pressed for a reason the user cannot fix
-        // from this screen.
+        composeRule.onNodeWithText(saveLabel).assertIsNotEnabled()
+    }
+
+    @Test
+    fun missingSelectedLocationPreventsSaving() {
+        render(mode = WidgetLocationMode.SELECTED, hasHomeLocation = false, hasSelectedLocation = false)
+
+        composeRule.onNodeWithText(context.getString(R.string.widget_configure_no_selected)).assertIsDisplayed()
+        composeRule.onNodeWithText(saveLabel).assertIsNotEnabled()
+    }
+
+    @Test
+    fun selectedLocationCanBeUsedWithoutHome() {
+        render(mode = WidgetLocationMode.SELECTED, hasHomeLocation = false)
         composeRule.onNodeWithText(saveLabel).assertIsEnabled()
     }
 
     @Test
-    fun aWidgetFollowingTheAppCanAlwaysBeSaved() {
-        render(mode = WidgetLocationMode.SELECTED, hasHomeLocation = false)
+    fun fixedLocationMustHaveValidCoordinates() {
+        render(mode = WidgetLocationMode.FIXED, fixedLocation = tokyo.copy(latitude = 120.0))
+        composeRule.onNodeWithText(saveLabel).assertIsNotEnabled()
+    }
 
-        composeRule.onNodeWithText(saveLabel).assertIsEnabled()
+    @Test
+    fun actionsStayVisibleWhileScrollingToTheEndOfSearchResults() {
+        val locations = (1..30).map { tokyo.copy(id = "result-$it", name = "Suchergebnis $it") }
+        render(
+            mode = WidgetLocationMode.FIXED,
+            fixedLocation = hamburg,
+            search = SearchUiState(query = "Tokio", results = locations),
+        )
+        composeRule.onNodeWithText(saveLabel).assertIsDisplayed().assertIsEnabled()
+        composeRule.onNodeWithText(locations.last().name).performScrollTo().performClick()
+        composeRule.onNodeWithText(saveLabel).assertIsDisplayed()
+        composeRule.onNodeWithText(cancelLabel).assertIsDisplayed()
+        assertEquals(listOf(locations.last()), pickedLocations)
     }
 
     @Test

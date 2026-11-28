@@ -162,7 +162,9 @@ class WeatherFormatterTest {
     fun `relative age of data is phrased in German`() {
         val now = Instant.parse("2026-11-22T12:00:00Z")
         assertEquals("gerade eben", formatter.relativeTime(now.minusSeconds(30), now))
+        assertEquals("vor 1 Minute", formatter.relativeTime(now.minusSeconds(60), now))
         assertEquals("vor 12 Minuten", formatter.relativeTime(now.minusSeconds(12 * 60), now))
+        assertEquals("vor 1 Stunde", formatter.relativeTime(now.minusSeconds(3600), now))
         assertEquals("vor 3 Stunden", formatter.relativeTime(now.minusSeconds(3 * 3600), now))
         assertEquals("gestern", formatter.relativeTime(now.minusSeconds(26 * 3600), now))
         assertEquals("vor 4 Tagen", formatter.relativeTime(now.minusSeconds(4 * 24 * 3600), now))

@@ -4,307 +4,224 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.util.Log
 import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.updateAll
-import androidx.work.Constraints
+import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.await
 import androidx.work.workDataOf
 import com.example.weatherapp.WeatherApplication
 import com.example.weatherapp.di.AppContainer
-import java.time.Duration
+import com.example.weatherapp.domain.model.DataLoadFailure
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.cancellation.CancellationException
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/**
- * The three widgets, drawn from the data that is currently available.
- *
- * `updateAll` asks Glance for the ids of the instances that really exist, so a call costs nothing
- * while no widget is on any screen and never renders an instance that has been removed. The actual
- * work happens in [GlanceWeatherWidget.provideGlance], which is also where cached data is read.
- */
-object WidgetRendering {
-
-    suspend fun updateAllWidgets(context: Context) {
-        CurrentWeatherWidget().updateAll(context)
-        DayPeriodWidget().updateAll(context)
-        ThreeDayWidget().updateAll(context)
+internal object WidgetRendering {
+    /** The platform registry includes the configured ID even before Glance learns the provider. */
+    suspend fun update(context: Context, widgetId: Int) {
+        try {
+            val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(widgetId) ?: return
+            val widget = WidgetRegistry.widgetFor(info.provider.className) ?: return
+            widget.update(context, GlanceAppWidgetManager(context).getGlanceIdBy(widgetId))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.w("WidgetRendering", "Could not update widget $widgetId", failure)
+        }
     }
 }
 
-/**
- * Single scheduling point for everything that keeps the widgets up to date.
- *
- * One unique periodic job serves all widget instances of all three types - not one per widget, which
- * would multiply network requests and wake-ups for the same forecast. Repeat requests are collapsed
- * into that one job as well: [requestWidgetUpdate] replaces a not-yet-started run instead of adding
- * another, so five widgets reacting to one location change still means one refresh.
- *
- * The policy is the app's own cache policy, not a timer: a refresh only reaches the network when the
- * cached forecast is no longer fresh, so the periodic interval is chosen to match that window rather
- * than to poll harder.
- *
- * Android may run the periodic job late - Doze, battery optimisation, manufacturer policies, no
- * network. Nothing here pretends otherwise: the widgets keep showing the last cached forecast, and a
- * later run simply catches up.
- */
 class WidgetRefreshCoordinator(
     private val container: AppContainer,
-    /**
-     * The widget instances the launcher holds right now. Injectable because an instrumented test
-     * cannot create a widget host of its own, and "one job for all widgets" is a rule worth testing.
-     */
     private val liveWidgetIdsProvider: suspend (Context) -> Set<Int> = { WidgetRegistry.liveWidgetIds(it) },
 ) {
+    private val context get() = container.applicationContext
+    private val workManager get() = WorkManager.getInstance(context)
 
-    private val context: Context get() = container.applicationContext
-
-    /**
-     * Drawing is not allowed to die with the screen that asked for it: the configuration activity
-     * finishes the moment its save went through. A supervisor job keeps one failed render from
-     * cancelling the next one.
-     */
-    private val renderScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    /**
-     * A widget has just been configured on the configuration screen.
-     *
-     * This path deliberately does not ask "are there any widgets": the launcher composes a new widget
-     * while the user is still choosing its location, and its id is not in the launcher's list of bound
-     * widgets at the moment this screen confirms the choice. Without a refresh right here, the freshly
-     * configured instance would keep showing the "no location yet" note until the next periodic run.
-     *
-     * The redraw is started in the coordinator's own scope rather than the caller's because the
-     * configuration screen closes as soon as it has saved, and its scope ends with it.
-     */
+    /** Android binds the ID before launching configuration. Publish the first update before RESULT_OK. */
     suspend fun onWidgetConfigured(widgetId: Int) {
-        schedulePeriodicRefresh()
-        enqueueUpdate(forceRefresh = false)
-        renderScope.launch {
-            // The launcher binds the id when this screen returns, so the instance can only be drawn a
-            // moment later. Waiting for the scheduled run instead would leave the note on the home
-            // screen for as long as JobScheduler needs to get to the job.
-            delay(RENDER_DELAY_MILLIS)
-            drawConfiguredWidget(widgetId)
-            runCatching { WidgetRendering.updateAllWidgets(context) }
-                .onFailure { Log.w(TAG, "Widgets could not be drawn right after configuring one", it) }
-        }
-    }
-
-    /**
-     * Draws one instance from the configuration that was just confirmed.
-     *
-     * `updateAll` only reaches the instances Glance knows about, and a widget that the launcher composed
-     * before it was configured is not necessarily among them yet - which is exactly the case this path
-     * exists for. Which type the id belongs to comes from the App Widget service.
-     */
-    private suspend fun drawConfiguredWidget(widgetId: Int) {
-        runCatching {
-            val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(widgetId)
-            val widget = WidgetRegistry.widgetFor(info?.provider?.className)
-            if (widget == null) {
-                Log.i(TAG, "Widget $widgetId is not bound to a known widget type yet")
-                return
+        val provider = container.widgetDataProvider
+        val location = provider.locationsByWidget(setOf(widgetId))[widgetId]
+        location?.let { provider.markRefreshing(listOf(it.id)) }
+        WidgetRendering.update(context, widgetId)
+        try {
+            schedulePeriodicRefresh()
+            enqueueUpdate(initialWorkName(widgetId), widgetId = widgetId).await()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.w(TAG, "Could not schedule the initial widget refresh", failure)
+            if (location != null) {
+                val active = provider.locationsByWidget(liveWidgetIds() + widgetId).values.map { it.id }.toSet()
+                provider.publishRefresh(location.id, DataLoadFailure.INVALID_DATA, active)
+                WidgetRendering.update(context, widgetId)
             }
-            widget.update(context, GlanceAppWidgetManager(context).getGlanceIdBy(widgetId))
-        }.onFailure {
-            Log.i(TAG, "Widget $widgetId could not be drawn right after configuring it", it)
         }
     }
 
-    /** A widget has been deleted: drop what belongs to it and stop the work if nothing is left. */
+    fun onLauncherUpdate() {
+        schedulePeriodicRefresh()
+        enqueueUpdate(UPDATE_WORK_NAME)
+    }
+
     suspend fun onWidgetRemoved(widgetIds: Collection<Int>) {
         container.widgetConfigRepository.remove(widgetIds)
-        pruneStaleConfigurations()
+        widgetIds.forEach { workManager.cancelUniqueWork(initialWorkName(it)) }
+        val provider = container.widgetDataProvider
+        provider.forgetInactiveLocations(provider.locationsByWidget(liveWidgetIds()).values.map { it.id }.toSet())
         cancelIfNoWidgetsRemain()
     }
 
-    /**
-     * Asks for one refresh of every widget, without forcing a network request.
-     *
-     * The worker reads the cache first and only fetches when the stored forecast is no longer fresh,
-     * which is what keeps a date rollover or a resize from costing an API call.
-     *
-     * This is also the entry point that (re)creates the periodic job: a widget added while the app was
-     * killed is discovered here, and a periodic job cancelled while no widget existed comes back with
-     * the first refresh request of the new one. [ExistingPeriodicWorkPolicy.KEEP] makes sure that
-     * happens at most once, whatever the number of widgets.
-     */
+    /** Redraw local dates and clock-dependent labels using the existing forecast. */
+    suspend fun redrawFromCache() {
+        container.widgetDataProvider.invalidateRendering()
+        liveWidgetIds().forEach { WidgetRendering.update(context, it) }
+    }
+
     suspend fun requestWidgetUpdate(forceRefresh: Boolean = false) {
         if (liveWidgetIds().isEmpty()) return
+        redrawFromCache()
         schedulePeriodicRefresh()
-        enqueueUpdate(forceRefresh)
+        enqueueUpdate(UPDATE_WORK_NAME, forceRefresh = forceRefresh)
     }
 
-    /** Hands over the single one-time refresh; the unique name is what collapses repeat requests. */
-    private suspend fun enqueueUpdate(forceRefresh: Boolean) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                WorkManager.getInstance(context).enqueueUniqueWork(
-                    UPDATE_WORK_NAME,
-                    ExistingWorkPolicy.REPLACE,
-                    OneTimeWorkRequestBuilder<WidgetRefreshWorker>()
-                        .setInputData(workDataOf(WidgetRefreshWorker.INPUT_FORCE_REFRESH to forceRefresh))
-                        .setConstraints(networkConstraints())
-                        .build(),
-                )
-            }.onFailure { Log.w(TAG, "Widget refresh could not be scheduled", it) }
-        }
-    }
+    private fun enqueueUpdate(
+        name: String,
+        widgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID,
+        forceRefresh: Boolean = false,
+    ): Operation =
+        workManager.enqueueUniqueWork(
+            name,
+            // A new configuration or explicit refresh must survive an in-flight run.
+            if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID || forceRefresh) {
+                ExistingWorkPolicy.REPLACE
+            } else {
+                ExistingWorkPolicy.KEEP
+            },
+            OneTimeWorkRequestBuilder<WidgetRefreshWorker>()
+                .setInputData(workDataOf(
+                    WidgetRefreshWorker.INPUT_WIDGET_ID to widgetId,
+                    WidgetRefreshWorker.INPUT_FORCE_REFRESH to forceRefresh,
+                ))
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MINUTES, TimeUnit.MINUTES)
+                .build(),
+        )
 
-    /** Runs the periodic refresh while at least one widget exists and stops it when none does. */
     suspend fun cancelIfNoWidgetsRemain() {
-        if (hasWidgets()) return
-        withContext(Dispatchers.IO) {
-            runCatching { WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME) }
-                .onFailure { Log.w(TAG, "Periodic widget refresh could not be cancelled", it) }
-        }
+        if (liveWidgetIds().isNotEmpty()) return
+        workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
+        workManager.cancelUniqueWork(UPDATE_WORK_NAME)
     }
 
-    /**
-     * Drops configurations whose widget id no longer exists.
-     *
-     * An empty answer from the App Widget service counts as no answer: deleting every stored
-     * configuration because the service was briefly unreachable would be worse than keeping one
-     * configuration too many, and a widget that really is gone is handled by the widget's own
-     * deletion callback.
-     */
     suspend fun pruneStaleConfigurations() {
         val live = liveWidgetIds()
         if (live.isEmpty()) return
         val stored = container.widgetConfigRepository.currentConfigurations().keys
-        val stale = stored - live
-        if (stale.isNotEmpty()) {
-            container.widgetConfigRepository.remove(stale)
-            Log.i(TAG, "Removed ${stale.size} abandoned widget configuration(s)")
-        }
+        val manager = AppWidgetManager.getInstance(context)
+        // A bound instance can be in configuration and absent from the provider's list.
+        val stale = (stored - live).filter { manager.getAppWidgetInfo(it) == null }
+        if (stale.isNotEmpty()) container.widgetConfigRepository.remove(stale)
     }
 
-    /** Schedules the one periodic job; [ExistingPeriodicWorkPolicy.KEEP] keeps it a single instance. */
-    private suspend fun schedulePeriodicRefresh() {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                    PERIODIC_WORK_NAME,
-                    ExistingPeriodicWorkPolicy.KEEP,
-                    PeriodicWorkRequestBuilder<WidgetRefreshWorker>(
-                        PERIODIC_REFRESH_MINUTES,
-                        TimeUnit.MINUTES,
-                    )
-                        .setConstraints(networkConstraints())
-                        .setBackoffCriteria(
-                            androidx.work.BackoffPolicy.EXPONENTIAL,
-                            Duration.ofMinutes(BACKOFF_MINUTES),
-                        )
-                        .build(),
-                )
-            }.onFailure { Log.w(TAG, "Periodic widget refresh could not be scheduled", it) }
-        }
+    private fun schedulePeriodicRefresh() {
+        workManager.enqueueUniquePeriodicWork(
+            PERIODIC_WORK_NAME,
+            // Also replace the network constraint of schedules saved by WetterPlus 1.2.0.
+            ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<WidgetRefreshWorker>(PERIODIC_REFRESH_MINUTES, TimeUnit.MINUTES)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_MINUTES, TimeUnit.MINUTES)
+                .build(),
+        )
     }
 
-    /** Ids of every widget instance the launcher holds right now. */
     suspend fun liveWidgetIds(): Set<Int> = withContext(Dispatchers.IO) { liveWidgetIdsProvider(context) }
-
-    private suspend fun hasWidgets(): Boolean = liveWidgetIds().isNotEmpty()
-
-    /**
-     * A refresh needs a connection, and deferring it while there is none is exactly the behaviour
-     * the app wants offline: the widgets keep showing cached values, and the job runs later.
-     */
-    private fun networkConstraints(): Constraints = Constraints.Builder()
-        .setRequiredNetworkType(NetworkType.CONNECTED)
-        .build()
 
     companion object {
         private const val TAG = "WidgetRefresh"
-
-        /** Unique names double as the guarantee that only one job of a kind is ever scheduled. */
         const val PERIODIC_WORK_NAME = "wetterplus-widget-refresh-periodic"
         const val UPDATE_WORK_NAME = "wetterplus-widget-refresh-once"
-
-        /**
-         * Interval of the periodic refresh. The cache policy already treats a forecast as stale after
-         * 30 minutes, so checking more often than that would only add requests without adding fresh
-         * data; the value is also WorkManager's smallest allowed periodic interval.
-         */
         const val PERIODIC_REFRESH_MINUTES = 30L
-
         private const val BACKOFF_MINUTES = 10L
 
-        /**
-         * How long to wait before drawing a widget that was just configured. The launcher binds the id
-         * when the configuration screen returns, so a redraw of that instance needs the binding first.
-         */
-        private const val RENDER_DELAY_MILLIS = 700L
+        internal fun initialWorkName(widgetId: Int) = "$UPDATE_WORK_NAME-$widgetId"
     }
 }
 
-/**
- * The background work behind every widget refresh.
- *
- * It loads each place the widgets display - once per place, not once per widget - through the
- * existing repository, and then redraws the widgets. A location whose refresh failed keeps its cached
- * forecast in the database, so the widget still shows it and says that the data may be outdated.
- */
+/** Renders cached data first, then refreshes each distinct live location through the shared cache. */
 class WidgetRefreshWorker(
     context: Context,
     parameters: WorkerParameters,
 ) : CoroutineWorker(context, parameters) {
 
-    override suspend fun doWork(): Result {
-        val container = (applicationContext as WeatherApplication).container
-        val forceRefresh = inputData.getBoolean(INPUT_FORCE_REFRESH, false)
-        val provider = container.widgetDataProvider
-
-        val locations = try {
-            provider.displayedLocations()
-        } catch (cancellation: CancellationException) {
-            throw cancellation
+    override suspend fun doWork(): Result = refreshLock.withLock {
+        try {
+            refresh()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (failure: Exception) {
-            Log.w(TAG, "Widget locations could not be resolved", failure)
-            emptyList()
+            Log.w(TAG, "Widget refresh failed", failure)
+            Result.retry()
         }
+    }
 
-        if (locations.isEmpty()) {
-            // Nothing is displayed any more: the widgets still on screen have no location to show,
-            // and no request is made for them.
-            WidgetRendering.updateAllWidgets(applicationContext)
-            return Result.success()
-        }
+    private suspend fun refresh(): Result {
+        val context = applicationContext
+        val container = (context as WeatherApplication).container
+        val provider = container.widgetDataProvider
+        val widgetId = inputData.getInt(INPUT_WIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+        val forceRefresh = inputData.getBoolean(INPUT_FORCE_REFRESH, false)
 
-        var failures = 0
-        locations.forEach { location ->
-            val data = try {
-                provider.loadForLocation(location, forceRefresh)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (failure: Exception) {
-                Log.w(TAG, "Widget weather could not be loaded", failure)
-                null
+        fun liveIds(): Set<Int> {
+            val ids = WidgetRegistry.liveWidgetIds(context)
+            val bound = AppWidgetManager.getInstance(context).getAppWidgetInfo(widgetId)
+            return if (bound != null && WidgetRegistry.widgetFor(bound.provider.className) != null) {
+                ids + widgetId
+            } else {
+                ids
             }
-            if (data == null || data.failure != null) failures += 1
         }
 
-        WidgetRendering.updateAllWidgets(applicationContext)
+        val liveIds = liveIds()
+        val requested = if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) liveIds else liveIds intersect setOf(widgetId)
+        val locations = provider.locationsByWidget(requested).values.distinctBy { it.id }
+        provider.markRefreshing(locations.map { it.id })
+        provider.invalidateRendering()
+        requested.forEach { WidgetRendering.update(context, it) }
 
-        // Everything failed: the network is probably still unavailable, so let WorkManager retry.
-        // Partial success is success - the places that worked are up to date now.
-        return if (failures == locations.size) Result.retry() else Result.success()
+        var hadFailure = false
+        for (location in locations) {
+            if (provider.locationsByWidget(liveIds()).values.none { it.id == location.id }) continue
+            val failure = try {
+                provider.loadForLocation(location, forceRefresh && runAttemptCount == 0).failure
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (unexpected: Exception) {
+                Log.w(TAG, "Could not load widget forecast", unexpected)
+                DataLoadFailure.INVALID_DATA
+            }
+            val activeLocations = provider.locationsByWidget(liveIds())
+            val affected = activeLocations.filterValues { it.id == location.id }.keys
+            provider.publishRefresh(location.id, failure, activeLocations.values.map { it.id }.toSet())
+            affected.forEach { WidgetRendering.update(context, it) }
+            if (failure != null && affected.isNotEmpty()) hadFailure = true
+        }
+        return if (hadFailure && runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()
     }
 
     companion object {
         private const val TAG = "WidgetRefreshWorker"
+        private const val MAX_RETRIES = 2
+        private val refreshLock = Mutex()
+        const val INPUT_WIDGET_ID = "widget_id"
         const val INPUT_FORCE_REFRESH = "force_refresh"
     }
 }

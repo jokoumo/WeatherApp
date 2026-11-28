@@ -76,7 +76,7 @@ fun buildThreeDayWidgetContent(data: WidgetData?): ThreeDayWidgetContent {
     val snapshot = data.snapshot
     if (snapshot == null || snapshot.daily.isEmpty()) {
         return ThreeDayWidgetContent(
-            state = WidgetState.NO_DATA,
+            state = if (data.awaitingFirstForecast) WidgetState.LOADING else WidgetState.NO_DATA,
             locationName = location.name,
             updatedAgo = data.updatedAgoOrNull(),
         )

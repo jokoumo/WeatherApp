@@ -1,26 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    Day-period widget: the next four day periods of one location.
-
-    Four cards need more height than a single-sentence widget, so the minimum is one cell taller than
-    the current weather widget and the maximum leaves room for the two-by-two grid to keep its labels
-    readable. The default span of a new instance - three cells wide, two tall - is where the medium
-    layout begins; see widget_current_weather.xml for why that is the form a new widget arrives in.
-    See widget_current_weather.xml for why updatePeriodMillis is 0.
--->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:configure="com.example.weatherapp.widget.WidgetConfigurationActivity"
     android:description="@string/widget_day_period_description"
-    android:initialLayout="@layout/glance_default_loading_layout"
-    android:maxResizeHeight="340dp"
-    android:maxResizeWidth="400dp"
-    android:minHeight="110dp"
-    android:minResizeHeight="110dp"
-    android:minResizeWidth="170dp"
-    android:minWidth="170dp"
-    android:previewLayout="@layout/glance_default_loading_layout"
-    android:resizeMode="horizontal|vertical"
+    android:initialLayout="@layout/widget_initial_loading"
+    android:maxResizeHeight="220dp"
+    android:maxResizeWidth="300dp"
+    android:minHeight="148dp"
+    android:minResizeHeight="148dp"
+    android:minResizeWidth="146dp"
+    android:minWidth="146dp"
+    android:previewLayout="@layout/widget_preview_day_period"
+    android:resizeMode="horizontal"
     android:targetCellWidth="3"
     android:targetCellHeight="2"
     android:updatePeriodMillis="0"
+    android:widgetFeatures="reconfigurable"
     android:widgetCategory="home_screen" />

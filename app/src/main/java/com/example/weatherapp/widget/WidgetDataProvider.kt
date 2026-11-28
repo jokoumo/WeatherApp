@@ -8,8 +8,16 @@ import com.example.weatherapp.domain.model.DataLoadFailure
 import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.domain.model.WeatherSnapshot
 import com.example.weatherapp.domain.zoneIdOrDefault
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -27,6 +35,7 @@ data class WidgetData(
     val source: SnapshotSource? = null,
     val failure: DataLoadFailure? = null,
     val now: Instant,
+    val awaitingFirstForecast: Boolean = false,
 ) {
     val hasData: Boolean get() = snapshot != null && !snapshot.isEmpty
 
@@ -66,7 +75,81 @@ class WidgetDataProvider(
 ) {
 
     private val registryLock = Mutex()
-    private val locationLocks = mutableMapOf<String, Mutex>()
+    private val locationLocks = mutableMapOf<String, LocationLock>()
+    private val renderRevision = MutableStateFlow(0L)
+    private val refreshStatus = MutableStateFlow<Map<String, RefreshStatus>>(emptyMap())
+
+    internal data class Rendering(val configuration: WidgetConfiguration?, val data: WidgetData?)
+    private data class RefreshStatus(
+        val updating: Boolean = false,
+        val failure: DataLoadFailure? = null,
+        val revision: Long = 0,
+    )
+    private data class RenderInput(
+        val configuration: WidgetConfiguration?,
+        val location: SavedLocation?,
+        val status: RefreshStatus?,
+        val revision: Long,
+    )
+
+    /** Active Glance sessions must observe changes because update() can reuse their composition. */
+    internal fun rendering(widgetId: Int) = combine(
+        configRepository.configurations.map { it[widgetId] }.distinctUntilChanged(),
+        locationRepository.settings,
+        renderRevision,
+        refreshStatus,
+    ) { configuration, settings, revision, statuses ->
+        val location = configuration?.let { WidgetLocationResolver.resolve(it, settings) }
+        RenderInput(configuration, location, location?.let { statuses[it.id] }, revision)
+    }.distinctUntilChanged().map { input ->
+        val data = input.location?.let {
+            val snapshot = withContext(Dispatchers.IO) { weatherRepository.loadCached(it) }
+            val failure = input.status?.failure
+            WidgetData(
+                location = it,
+                snapshot = snapshot,
+                source = snapshot?.let { SnapshotSource.CACHED },
+                failure = failure,
+                now = clock.instant(),
+                awaitingFirstForecast = snapshot == null && failure == null && input.status?.updating == true,
+            )
+        }
+        Rendering(input.configuration, data)
+    }
+
+    internal fun markRefreshing(locationIds: Collection<String>) {
+        refreshStatus.update { previous ->
+            previous + locationIds.associateWith { (previous[it] ?: RefreshStatus()).copy(updating = true) }
+        }
+    }
+
+    /** Wake active compositions for this location and discard status for removed locations. */
+    internal fun publishRefresh(locationId: String, failure: DataLoadFailure?, activeLocationIds: Set<String>) {
+        refreshStatus.update { previous ->
+            val retained = previous.filterKeys { it in activeLocationIds }
+            if (locationId !in activeLocationIds) retained else {
+                retained + (locationId to RefreshStatus(failure = failure, revision = (previous[locationId]?.revision ?: 0) + 1))
+            }
+        }
+    }
+
+    internal fun forgetInactiveLocations(activeLocationIds: Set<String>) {
+        refreshStatus.update { previous -> previous.filterKeys { it in activeLocationIds } }
+    }
+
+    internal fun invalidateRendering() {
+        renderRevision.update { it + 1 }
+    }
+
+    internal suspend fun locationsByWidget(widgetIds: Set<Int>): Map<Int, SavedLocation> {
+        val settings = locationRepository.currentSettings()
+        return configRepository.currentConfigurations()
+            .filterKeys { it in widgetIds }
+            .mapNotNull { (id, configuration) ->
+                WidgetLocationResolver.resolve(configuration, settings)?.let { id to it }
+            }
+            .toMap()
+    }
 
     /** Configuration of one widget instance, null while it was never configured. */
     suspend fun configuration(widgetId: Int): WidgetConfiguration? =
@@ -139,15 +222,20 @@ class WidgetDataProvider(
 
     /** Runs [block] while no other widget update is loading the same location. */
     private suspend fun <R> withLocationLock(locationId: String, block: suspend () -> R): R {
-        val mutex = registryLock.withLock { locationLocks.getOrPut(locationId) { Mutex() } }
+        val lock = registryLock.withLock {
+            locationLocks.getOrPut(locationId, ::LocationLock).also { it.users++ }
+        }
         try {
-            return mutex.withLock { block() }
+            return lock.mutex.withLock { block() }
         } finally {
-            // Drop the lock again once nobody is waiting, so the map stays bounded by the number of
-            // locations that are loaded at the same moment rather than by everything ever seen.
-            registryLock.withLock {
-                if (!mutex.isLocked) locationLocks.remove(locationId)
+            withContext(NonCancellable) {
+                registryLock.withLock {
+                    lock.users--
+                    if (lock.users == 0) locationLocks.remove(locationId)
+                }
             }
         }
     }
+
+    private class LocationLock(val mutex: Mutex = Mutex(), var users: Int = 0)
 }

@@ -3,10 +3,8 @@ package com.example.weatherapp.widget
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
-import androidx.glance.Image
-import androidx.glance.ImageProvider
-import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.cornerRadius
+import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
@@ -14,34 +12,29 @@ import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
-import androidx.glance.layout.size
+import androidx.glance.layout.padding
 import androidx.glance.layout.width
+import androidx.glance.semantics.contentDescription
+import androidx.glance.semantics.semantics
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
+import com.example.weatherapp.R
+import com.example.weatherapp.domain.WeatherFormatter
 import com.example.weatherapp.widget.presentation.DayRow
 import com.example.weatherapp.widget.presentation.WidgetHeader
 import com.example.weatherapp.widget.presentation.WidgetPalette
 import com.example.weatherapp.widget.presentation.WidgetSizeClass
-import com.example.weatherapp.widget.presentation.WidgetSizes
+import com.example.weatherapp.widget.presentation.WidgetState
 import com.example.weatherapp.widget.presentation.WidgetStateMessage
 import com.example.weatherapp.widget.presentation.WidgetWeatherSymbol
 import com.example.weatherapp.widget.presentation.buildThreeDayWidgetContent
 import com.example.weatherapp.widget.presentation.labelRes
-import com.example.weatherapp.widget.presentation.messageResOrNull
 import com.example.weatherapp.widget.presentation.precipitationSummary
 import com.example.weatherapp.widget.presentation.widgetString
 
-/**
- * The three-day widget: heute, morgen, übermorgen.
- *
- * Its content is a layout only. Which day is "today", which values belong to it, and how much of
- * them the current size has room for are all answered by `buildThreeDayWidgetContent`, so what the
- * widget shows can be read and tested without a launcher.
- */
-class ThreeDayWidget : GlanceWeatherWidget(WidgetSizes.threeDaySizes) {
-
+class ThreeDayWidget : GlanceWeatherWidget() {
     @Composable
     override fun WeatherContent(data: WidgetData?, sizeClass: WidgetSizeClass) {
         val content = buildThreeDayWidgetContent(data)
@@ -50,173 +43,89 @@ class ThreeDayWidget : GlanceWeatherWidget(WidgetSizes.threeDaySizes) {
                 locationName = content.locationName,
                 updatedAgo = content.updatedAgo,
                 sizeClass = sizeClass,
-                stale = data?.isProbablyOutdated == true,
+                stale = data?.let { it.isShowingStaleData || it.isProbablyOutdated } == true,
             )
-            if (content.state.messageResOrNull() != null) {
-                Spacer(GlanceModifier.height(6.dp))
+            if (content.state != WidgetState.READY) {
                 WidgetStateMessage(content.state, sizeClass, GlanceModifier.defaultWeight())
-            }
-            content.days.forEach { row ->
-                Spacer(GlanceModifier.height(6.dp))
-                when (sizeClass) {
-                    WidgetSizeClass.COMPACT -> CompactDayRow(row)
-                    WidgetSizeClass.MEDIUM -> MediumDayRow(row)
-                    WidgetSizeClass.EXPANDED -> ExpandedDayRow(row)
+            } else {
+                content.days.forEach { day ->
+                    Spacer(GlanceModifier.height(4.dp))
+                    ForecastRow(day, sizeClass, GlanceModifier.defaultWeight())
                 }
             }
         }
     }
 }
 
-/** The three-day widget as it appears in the Android widget picker. */
-class ThreeDayWidgetReceiver : GlanceAppWidgetReceiver() {
-    override val glanceAppWidget: GlanceAppWidget = ThreeDayWidget()
+class ThreeDayWidgetReceiver : WeatherWidgetReceiver() {
+    override val glanceAppWidget = ThreeDayWidget()
 }
 
-/**
- * Expanded row: day and date on the left, symbol, condition and precipitation in the middle, the
- * temperature range on the right.
- */
 @Composable
-private fun ExpandedDayRow(row: DayRow) {
+private fun ForecastRow(row: DayRow, sizeClass: WidgetSizeClass, modifier: GlanceModifier) {
+    val expanded = sizeClass == WidgetSizeClass.EXPANDED
+    val secondaryStyle = TextStyle(color = WidgetPalette.muted, fontSize = WidgetPalette.secondarySizeFor(sizeClass))
     Row(
-        modifier = GlanceModifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth()
+            .background(WidgetPalette.tile)
+            .cornerRadius(8.dp)
+            .padding(horizontal = 5.dp),
         verticalAlignment = Alignment.Vertical.CenterVertically,
     ) {
         Column(modifier = GlanceModifier.defaultWeight()) {
             Text(
-                text = dayLabel(row),
+                text = row.dayRelation.labelRes()?.let { widgetString(it) } ?: row.weekdayLabel,
                 maxLines = 1,
                 style = TextStyle(
                     color = WidgetPalette.onSurface,
-                    fontSize = WidgetPalette.bodySize,
+                    fontSize = WidgetPalette.bodySizeFor(sizeClass),
                     fontWeight = FontWeight.Bold,
                 ),
             )
-            Text(
-                text = row.shortDate,
-                maxLines = 1,
-                style = TextStyle(color = WidgetPalette.muted, fontSize = WidgetPalette.footnoteSize),
-            )
-        }
-        Spacer(GlanceModifier.width(4.dp))
-        WidgetWeatherSymbol(
-            iconRes = row.iconRes,
-            windWarning = row.windWarning,
-            size = WidgetPalette.rowIconSize(WidgetSizeClass.EXPANDED),
-            contentDescription = widgetString(row.conditionLabelRes),
-        )
-        Spacer(GlanceModifier.width(4.dp))
-        Column(modifier = GlanceModifier.defaultWeight()) {
-            Text(
-                text = widgetString(row.conditionLabelRes),
-                maxLines = 1,
-                style = TextStyle(color = WidgetPalette.onSurface, fontSize = WidgetPalette.bodySize),
-            )
-            row.precipitationSummary()?.let { summary ->
-                Text(
-                    text = summary,
-                    maxLines = 1,
-                    style = TextStyle(color = WidgetPalette.muted, fontSize = WidgetPalette.footnoteSize),
-                )
+            val details = if (expanded) row.shortDate else {
+                row.precipitationProbabilityPercent?.let { WeatherFormatter.percent(it) }
             }
+            details?.let { Text(it, maxLines = 1, style = secondaryStyle) }
         }
-        Spacer(GlanceModifier.width(4.dp))
-        TemperatureRange(row, WidgetSizeClass.EXPANDED)
-    }
-}
-
-/** Medium row: the same order, with the date and the condition text giving way to the values. */
-@Composable
-private fun MediumDayRow(row: DayRow) {
-    Row(
-        modifier = GlanceModifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Vertical.CenterVertically,
-    ) {
-        Text(
-            text = dayLabel(row),
-            maxLines = 1,
-            style = TextStyle(
-                color = WidgetPalette.onSurface,
-                fontSize = WidgetPalette.bodySizeFor(WidgetSizeClass.MEDIUM),
-                fontWeight = FontWeight.Bold,
-            ),
-            modifier = GlanceModifier.defaultWeight(),
-        )
-        Spacer(GlanceModifier.width(4.dp))
         WidgetWeatherSymbol(
             iconRes = row.iconRes,
             windWarning = row.windWarning,
-            size = WidgetPalette.rowIconSize(WidgetSizeClass.MEDIUM),
+            size = WidgetPalette.rowIconSize(sizeClass),
             contentDescription = widgetString(row.conditionLabelRes),
         )
         Spacer(GlanceModifier.width(4.dp))
-        row.precipitationSummary()?.let { summary ->
-            Text(
-                text = summary,
-                maxLines = 1,
-                style = TextStyle(
-                    color = WidgetPalette.muted,
-                    fontSize = WidgetPalette.secondarySizeFor(WidgetSizeClass.MEDIUM),
-                ),
-                modifier = GlanceModifier.defaultWeight(),
-            )
+        if (expanded) {
+            Column(modifier = GlanceModifier.defaultWeight()) {
+                Text(widgetString(row.conditionLabelRes), maxLines = 2, style = secondaryStyle)
+                row.precipitationSummary()?.let { Text(it, maxLines = 1, style = secondaryStyle) }
+            }
             Spacer(GlanceModifier.width(4.dp))
         }
-        TemperatureRange(row, WidgetSizeClass.MEDIUM)
-    }
-}
-
-/** Compact row: day, symbol and temperature range - the least that still answers the question. */
-@Composable
-private fun CompactDayRow(row: DayRow) {
-    Row(
-        modifier = GlanceModifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Vertical.CenterVertically,
-    ) {
-        Text(
-            text = row.weekdayLabel,
-            maxLines = 1,
-            style = TextStyle(
-                color = WidgetPalette.onSurface,
-                fontSize = WidgetPalette.secondarySizeFor(WidgetSizeClass.COMPACT),
-                fontWeight = FontWeight.Bold,
-            ),
-            modifier = GlanceModifier.defaultWeight(),
-        )
-        Spacer(GlanceModifier.width(2.dp))
-        WidgetWeatherSymbol(
-            iconRes = row.iconRes,
-            windWarning = row.windWarning,
-            size = WidgetPalette.rowIconSize(WidgetSizeClass.COMPACT),
-            contentDescription = widgetString(row.conditionLabelRes),
-        )
-        Spacer(GlanceModifier.width(2.dp))
-        TemperatureRange(row, WidgetSizeClass.COMPACT)
-    }
-}
-
-/**
- * The temperature range of one day, on the right edge.
- *
- * One string, "7–12 °C", at every size: it is the spelling the app uses, and splitting minimum and
- * maximum into two columns would need labels the compact row has no room for.
- */
-@Composable
-private fun TemperatureRange(row: DayRow, sizeClass: WidgetSizeClass) {
-    Text(
-        text = row.temperatureRange,
-        maxLines = 1,
-        style = TextStyle(
+        val temperatureStyle = TextStyle(
             color = WidgetPalette.onSurface,
             fontSize = WidgetPalette.bodySizeFor(sizeClass),
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.End,
-        ),
-    )
+        )
+        if (expanded && row.hasData) {
+            Column(horizontalAlignment = Alignment.Horizontal.End) {
+                ForecastTemperature(row.minTemperatureCelsius, R.string.widget_minimum, "↓", secondaryStyle)
+                ForecastTemperature(row.maxTemperatureCelsius, R.string.widget_maximum, "↑", temperatureStyle)
+            }
+        } else {
+            Text(row.temperatureRange, maxLines = 1, style = temperatureStyle)
+        }
+    }
 }
 
-/** "Heute", "Morgen", "Übermorgen" - or the weekday of a day further ahead. */
 @Composable
-private fun dayLabel(row: DayRow): String =
-    row.dayRelation.labelRes()?.let { widgetString(it) } ?: row.weekdayLabel
+private fun ForecastTemperature(value: Double?, label: Int, arrow: String, style: TextStyle) {
+    val temperature = WeatherFormatter.temperature(value)
+    val description = widgetString(label, temperature)
+    Text(
+        text = "$arrow $temperature",
+        modifier = GlanceModifier.semantics { contentDescription = description },
+        style = style,
+        maxLines = 1,
+    )
+}

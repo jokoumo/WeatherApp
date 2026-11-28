@@ -1,34 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    Current weather widget.
-
-    Sizes: minWidth/minHeight describe the smallest cell the widget asks for, the resize bounds the
-    range the user may drag it to. Glance composes one layout per DpSize declared in
-    CurrentWeatherWidget, and the system picks the one that fits the cell - which is why the declared
-    sizes and these bounds are kept in the same order of magnitude.
-    targetCellWidth/targetCellHeight is the span a launcher gives a new instance: three cells wide by
-    two tall, which is where the medium layout begins. The compact layout is something a user drags a
-    widget down to, not the form a new widget should arrive in. The upper resize bounds sit a little
-    above the largest layout on purpose: a launcher grows a widget one cell row at a time, and a cap
-    below three rows would keep the largest layout out of reach even though the widget supports it.
-
-    updatePeriodMillis is 0 on purpose: Android would only wake the widget every 30 minutes at best and
-    would do so regardless of the cache policy. WorkManager owns the refresh, so the system is asked to
-    do none of it.
--->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:configure="com.example.weatherapp.widget.WidgetConfigurationActivity"
     android:description="@string/widget_current_description"
-    android:initialLayout="@layout/glance_default_loading_layout"
-    android:maxResizeHeight="340dp"
-    android:maxResizeWidth="400dp"
-    android:minHeight="100dp"
-    android:minResizeHeight="100dp"
-    android:minResizeWidth="140dp"
-    android:minWidth="140dp"
-    android:previewLayout="@layout/glance_default_loading_layout"
-    android:resizeMode="horizontal|vertical"
+    android:initialLayout="@layout/widget_initial_loading"
+    android:maxResizeHeight="220dp"
+    android:maxResizeWidth="300dp"
+    android:minHeight="148dp"
+    android:minResizeHeight="148dp"
+    android:minResizeWidth="146dp"
+    android:minWidth="146dp"
+    android:previewLayout="@layout/widget_preview_current_weather"
+    android:resizeMode="horizontal"
     android:targetCellWidth="3"
     android:targetCellHeight="2"
     android:updatePeriodMillis="0"
+    android:widgetFeatures="reconfigurable"
     android:widgetCategory="home_screen" />

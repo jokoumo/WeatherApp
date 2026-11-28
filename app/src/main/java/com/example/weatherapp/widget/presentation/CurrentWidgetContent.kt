@@ -15,13 +15,13 @@ import com.example.weatherapp.widget.WidgetData
 import java.time.Duration
 import java.time.Instant
 
-/** The nine metrics the current weather widget can show, in the order they are preferred. */
+/** Available metrics, in display priority. */
 enum class WidgetMetric {
-    TODAY_RANGE,
     HUMIDITY,
+    WIND,
+    TODAY_RANGE,
     PRECIPITATION_PROBABILITY,
     PRECIPITATION,
-    WIND,
     WIND_GUSTS,
     PRESSURE,
     CLOUD_COVER,
@@ -32,9 +32,7 @@ enum class WidgetMetric {
  * Detailed current weather, ready to be drawn.
  *
  * [tiles] holds the metrics the data can actually support, already reduced to what the size class
- * offers room for; an empty list means there is nothing to add, not that a placeholder is missing.
- * [headlineValues] is what the compact layout shows next to the temperature, so the smallest widget
- * still carries two real statements.
+ * offers room for. Missing metrics leave room for the next available values.
  */
 data class CurrentWidgetContent(
     val state: WidgetState,
@@ -46,7 +44,6 @@ data class CurrentWidgetContent(
     val feelsLike: String? = null,
     val updatedAgo: String? = null,
     val tiles: List<WidgetMetricTile> = emptyList(),
-    val headlineValues: List<String> = emptyList(),
 )
 
 /** One information tile: a label from resources and the formatted value of the actual data. */
@@ -57,24 +54,17 @@ data class WidgetMetricTile(
 )
 
 /**
- * Number of information tiles a size class has room for.
- *
- * Three columns of three rows in the expanded layout, two columns of two rows in the medium one, and
- * no grid at all when the widget is compact - which is what keeps nine metrics from being squeezed
- * into an unreadable space.
+ * Number of information tiles shown at each width.
  */
 fun tileCountFor(sizeClass: WidgetSizeClass): Int = when (sizeClass) {
-    WidgetSizeClass.COMPACT -> 0
-    WidgetSizeClass.MEDIUM -> 4
-    WidgetSizeClass.EXPANDED -> 9
+    WidgetSizeClass.COMPACT -> 2
+    WidgetSizeClass.EXPANDED -> 4
 }
 
 /**
  * Builds the current weather content of [data] for one [sizeClass].
  *
- * Which metric is shown where is decided here, in a plain function, so the answer to "does the
- * medium layout really prefer temperature, humidity, precipitation and wind?" is a test rather than a
- * screenshot.
+ * The first available metrics in display priority fit the selected layout.
  */
 fun buildCurrentWidgetContent(
     data: WidgetData?,
@@ -87,7 +77,7 @@ fun buildCurrentWidgetContent(
     val current = snapshot?.current
     if (snapshot == null || (current == null && snapshot.hourly.isEmpty() && snapshot.daily.isEmpty())) {
         return CurrentWidgetContent(
-            state = WidgetState.NO_DATA,
+            state = if (data.awaitingFirstForecast) WidgetState.LOADING else WidgetState.NO_DATA,
             locationName = location.name,
             updatedAgo = data.updatedAgoOrNull(),
         )
@@ -108,8 +98,7 @@ fun buildCurrentWidgetContent(
             WeatherFormatter.temperature(it)
         },
         updatedAgo = data.updatedAgoOrNull(),
-        tiles = available.take(tileCountFor(sizeClass)),
-        headlineValues = available.take(COMPACT_HEADLINE_VALUES).map { it.value },
+        tiles = available.sortedBy { it.metric.ordinal }.take(tileCountFor(sizeClass)),
     )
 }
 
@@ -146,7 +135,7 @@ private fun availableTiles(
         )
     }
     current?.relativeHumidityPercent?.let {
-        tiles += WidgetMetricTile(WidgetMetric.HUMIDITY, R.string.detail_humidity, WeatherFormatter.percent(it))
+        tiles += WidgetMetricTile(WidgetMetric.HUMIDITY, R.string.widget_tile_humidity, WeatherFormatter.percent(it))
     }
     currentHour(hours, referenceInstant)?.precipitationProbabilityPercent?.let {
         tiles += WidgetMetricTile(
@@ -206,6 +195,3 @@ private fun currentHour(hours: List<HourlyWeather>, referenceInstant: Instant): 
 
 /** Length of one hourly forecast interval, matching the API's hourly step. */
 private val HOURLY_INTERVAL: Duration = Duration.ofHours(1)
-
-/** How many values the compact layout shows next to the temperature. */
-private const val COMPACT_HEADLINE_VALUES = 2
