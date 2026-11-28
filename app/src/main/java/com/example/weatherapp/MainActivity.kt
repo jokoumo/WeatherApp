@@ -1,5 +1,6 @@
 package com.example.weatherapp
 
+import android.content.Intent
 import android.content.res.Configuration.UI_MODE_NIGHT_MASK
 import android.content.res.Configuration.UI_MODE_NIGHT_YES
 import android.os.Bundle
@@ -12,10 +13,15 @@ import androidx.compose.runtime.getValue
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.example.weatherapp.domain.model.resolveDarkTheme
 import com.example.weatherapp.ui.MainViewModel
 import com.example.weatherapp.ui.WeatherRoot
 import com.example.weatherapp.ui.theme.WeatherAppTheme
+import com.example.weatherapp.widget.WidgetLaunch
+import com.example.weatherapp.widget.WidgetLocationMode
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /**
  * Single activity host.
@@ -28,6 +34,7 @@ import com.example.weatherapp.ui.theme.WeatherAppTheme
 class MainActivity : ComponentActivity() {
 
     private val container by lazy { (application as WeatherApplication).container }
+    private var widgetLaunchJob: Job? = null
 
     private val viewModel: MainViewModel by lazy {
         ViewModelProvider(this, container.mainViewModelFactory)[MainViewModel::class.java]
@@ -48,12 +55,45 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        if (savedInstanceState == null) handleWidgetLaunch(intent)
+    }
+
+    /** A widget tap while this activity is still on screen arrives here instead of in [onCreate]. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleWidgetLaunch(intent)
+    }
+
+    /**
+     * Opens the app at the location the tapped widget shows.
+     *
+     * A plain launch and a tap on a "aktueller Ort" widget need no action - the app already shows that
+     * place. Everything else is decided by the view model, which never writes a home location and never
+     * favourite anything because a widget was tapped.
+     */
+    private fun handleWidgetLaunch(intent: Intent?) {
+        widgetLaunchJob?.cancel()
+        if (WidgetLaunch.widgetIdFrom(intent) == null) return
+        widgetLaunchJob = lifecycleScope.launch {
+            val configuration = WidgetLaunch.resolveConfiguration(
+                intent,
+                container.widgetRefreshCoordinator.liveWidgetIds(),
+                container.widgetConfigRepository,
+            ) ?: return@launch
+            when (configuration.mode) {
+                WidgetLocationMode.SELECTED -> Unit
+                WidgetLocationMode.HOME -> viewModel.showHomeLocation()
+                WidgetLocationMode.FIXED -> configuration.fixedLocation?.let(viewModel::showFixedLocation)
+            }
+        }
     }
 
     /** Refreshes stale data when the app returns to the foreground. */
     override fun onResume() {
         super.onResume()
         viewModel.onForeground()
+        lifecycleScope.launch { container.widgetRefreshCoordinator.requestWidgetUpdate() }
     }
 
     /** True while the Android system itself is in dark mode. */

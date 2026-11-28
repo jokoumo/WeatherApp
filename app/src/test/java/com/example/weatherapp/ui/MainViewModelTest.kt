@@ -36,6 +36,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.UnknownHostException
+import java.io.IOException
 import java.time.Duration
 import java.time.Instant
 
@@ -53,8 +54,12 @@ class MainViewModelTest {
     private lateinit var geocodingApi: FakeGeocodingApi
     private lateinit var clock: MutableClock
     private lateinit var viewModel: MainViewModel
+    private lateinit var settingsStore: FakeSettingsStore
 
     private val now = Instant.parse("2026-11-22T11:00:00Z")
+
+    /** How often the view model asked the widget coordinator for a redraw. */
+    private var widgetRedraws = 0
 
     /**
      * Runs [body] with a ViewModel wired to fakes. The main dispatcher shares the test
@@ -66,6 +71,8 @@ class MainViewModelTest {
             selectedLocationId = hamburg.id,
         ),
         gate: CompletableDeferred<Unit>? = null,
+        widgetRetainedLocationIds: suspend () -> Set<String> = { emptySet() },
+        widgetUpdateRequested: suspend () -> Unit = {},
         body: suspend TestScope.() -> Unit,
     ) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -76,13 +83,41 @@ class MainViewModelTest {
             geocodingApi = FakeGeocodingApi(
                 results = listOf(geocoderResult(2911298, "Hamburg", 53.55, 9.99)),
             )
-            val locationRepository = LocationRepository(FakeSettingsStore(initialSettings), geocodingApi)
+            settingsStore = FakeSettingsStore(initialSettings)
+            val locationRepository = LocationRepository(settingsStore, geocodingApi)
             val weatherRepository = WeatherRepository(forecastApi, cache, ForecastMapper(), clock)
-            viewModel = MainViewModel(locationRepository, weatherRepository) { clock.now }
+            viewModel = MainViewModel(
+                locationRepository,
+                weatherRepository,
+                { clock.now },
+                widgetRetainedLocationIds = widgetRetainedLocationIds,
+                widgetUpdateRequested = widgetUpdateRequested,
+            )
             body()
         } finally {
             Dispatchers.resetMain()
         }
+    }
+
+    @Test
+    fun `failed home setup keeps search results and permits retry`() = withViewModel(initialSettings = LocationSettings()) {
+        viewModel.onSearchQueryChange("Hamburg")
+        advanceUntilIdle()
+        val choice = viewModel.uiState.value.search.results.single()
+        settingsStore.writeFailure = IOException("Settings unavailable")
+        viewModel.setHomeLocation(choice)
+        advanceUntilIdle()
+
+        assertEquals(UserMessage.LOCATION_SAVE_FAILED, viewModel.uiState.value.message)
+        assertEquals(listOf(choice), viewModel.uiState.value.search.results)
+        assertNull(viewModel.uiState.value.settings.homeLocation)
+        assertEquals(0, forecastApi.callCount)
+
+        settingsStore.writeFailure = null
+        viewModel.setHomeLocation(choice)
+        advanceUntilIdle()
+        assertEquals(choice, viewModel.uiState.value.settings.homeLocation)
+        assertEquals(UserMessage.HOME_LOCATION_SET, viewModel.uiState.value.message)
     }
 
     @Test
@@ -509,6 +544,121 @@ class MainViewModelTest {
         assertEquals("nothing may be deleted while the place is still in use", deletesBefore, cache.deleteCount)
         assertTrue(cache.entries.containsKey(berlin.id))
         assertTrue(cache.entries.containsKey(hamburg.id))
+    }
+
+    // -------------------------------------------------------------- home screen widgets
+
+    /**
+     * A widget can be pinned to a place the app does not keep any more. Its forecast is still read
+     * every update, so the row must survive the cleanup that removes rows nothing refers to - which is
+     * exactly the case the plain settings cannot see.
+     */
+    @Test
+    fun `a place a widget is pinned to keeps its forecast although the app does not use it`() = withViewModel(
+        widgetRetainedLocationIds = { setOf("widget-pinned-place") },
+    ) {
+        cache.save("widget-pinned-place", now, "{}")
+        advanceUntilIdle()
+
+        assertTrue("a widget still reads this forecast", cache.entries.containsKey("widget-pinned-place"))
+        assertTrue("the selected location keeps its forecast", cache.entries.containsKey(hamburg.id))
+    }
+
+    /**
+     * Removing a place from the app must not throw away the data of a widget that still shows it. The
+     * widget keeps its own copy of the location, and the cache row stays readable for it.
+     */
+    @Test
+    fun `deleting a location a widget still shows keeps its forecast`() = withViewModel(
+        widgetRetainedLocationIds = { setOf(berlin.id) },
+    ) {
+        advanceUntilIdle()
+        viewModel.addFavorite(berlin)
+        advanceUntilIdle()
+        viewModel.selectLocation(berlin.id)
+        advanceUntilIdle()
+        assertTrue(cache.entries.containsKey(berlin.id))
+
+        val deletesBefore = cache.deleteCount
+        viewModel.removeLocation(berlin.id)
+        advanceUntilIdle()
+
+        assertEquals("a pinned widget still needs this row", deletesBefore, cache.deleteCount)
+        assertTrue(cache.entries.containsKey(berlin.id))
+    }
+
+    /** Every redraw of the dashboard that brought new data also refreshes the widgets. */
+    @Test
+    fun `the widgets are asked to redraw when the app has new data or another location`() = withViewModel(
+        widgetUpdateRequested = { widgetRedraws++ },
+    ) {
+        advanceUntilIdle()
+        assertTrue("live data for the dashboard reaches the widgets too", widgetRedraws > 0)
+
+        val afterStart = widgetRedraws
+        viewModel.selectSearchedLocation(tokyo)
+        advanceUntilIdle()
+
+        assertTrue("the widgets follow a location change", widgetRedraws > afterStart)
+        assertEquals(tokyo.id, viewModel.uiState.value.weather.location?.id)
+    }
+
+    /**
+     * Tapping a widget of the home location opens the app there. The stored home location itself is
+     * not written, so a widget can never replace the protected place.
+     */
+    @Test
+    fun `tapping a home location widget shows it without rewriting the stored home location`() = withViewModel(
+        initialSettings = LocationSettings(
+            homeLocation = hamburg,
+            favorites = listOf(berlin),
+            selectedLocationId = berlin.id,
+        ),
+    ) {
+        advanceUntilIdle()
+        assertEquals(berlin.id, viewModel.uiState.value.weather.location?.id)
+
+        viewModel.showHomeLocation()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(hamburg.id, state.weather.location?.id)
+        assertEquals(hamburg.id, state.settings.homeLocation?.id)
+        assertEquals(listOf(berlin.id), state.settings.favorites.map { it.id })
+        assertTrue("the home location never becomes a history entry", state.settings.recentLocations.isEmpty())
+    }
+
+    /** A widget that already shows the displayed place causes no second request. */
+    @Test
+    fun `tapping a widget of the displayed location changes nothing`() = withViewModel {
+        advanceUntilIdle()
+        val callsAfterStart = forecastApi.callCount
+
+        viewModel.showHomeLocation()
+        advanceUntilIdle()
+
+        assertEquals(hamburg.id, viewModel.uiState.value.weather.location?.id)
+        assertEquals(callsAfterStart, forecastApi.callCount)
+    }
+
+    /**
+     * The place of a fixed widget may have left favourites and history long ago. Tapping the widget
+     * shows it again; like a search result it may enter the history, but it is never favourited and it
+     * never replaces the home location.
+     */
+    @Test
+    fun `tapping a fixed widget shows a place the app no longer knows without favouriting it`() = withViewModel {
+        advanceUntilIdle()
+
+        viewModel.showFixedLocation(tokyo)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(tokyo.id, state.weather.location?.id)
+        assertNotNull(state.weather.current)
+        assertTrue("a widget tap never favourites a place", state.settings.favorites.isEmpty())
+        assertEquals(hamburg.id, state.settings.homeLocation?.id)
+        assertEquals(listOf(tokyo.id), state.settings.recentLocations.map { it.id })
     }
 
     // ---------------------------------------------------------------- favorite toggling

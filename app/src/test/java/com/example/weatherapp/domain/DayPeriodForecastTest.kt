@@ -286,8 +286,8 @@ class DayPeriodForecastTest {
 
         assertEquals(7.4, morning.minTemperatureCelsius!!, 0.001)
         assertEquals(7.4, morning.maxTemperatureCelsius!!, 0.001)
-        assertEquals("7\u00A0\u00B0C", WeatherFormatter.temperatureRange(7.4, 7.4))
-        assertEquals("7\u201312\u00A0\u00B0C", WeatherFormatter.temperatureRange(7.4, 11.6))
+        assertEquals("7/7\u00A0\u00B0C", WeatherFormatter.temperatureRange(7.4, 7.4))
+        assertEquals("7/12\u00A0\u00B0C", WeatherFormatter.temperatureRange(7.4, 11.6))
         assertEquals("\u2013", WeatherFormatter.temperatureRange(null, null))
         assertEquals("7\u00A0\u00B0C", WeatherFormatter.temperatureRange(null, 7.4))
     }

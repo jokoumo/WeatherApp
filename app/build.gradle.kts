@@ -17,8 +17,8 @@ android {
         targetSdk = 37
         // Semantic version: MAJOR.MINOR.PATCH. versionCode only ever increases, so an APK built
         // here always updates an installation that was signed with the same key.
-        versionCode = 4
-        versionName = "1.1.1"
+        versionCode = 7
+        versionName = "1.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -74,6 +74,11 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    // Home screen widgets: Glance for the widget UI, WorkManager for the background refresh.
+    implementation(libs.androidx.glance)
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.work.runtime.ktx)
 
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.kotlinx.serialization)

@@ -7,7 +7,10 @@ import com.example.weatherapp.domain.model.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Holds the appearance preference for the whole application.
@@ -26,18 +29,25 @@ class AppearanceViewModel(
 
     private val _persistenceFailed = MutableStateFlow(false)
     val persistenceFailed: StateFlow<Boolean> = _persistenceFailed.asStateFlow()
+    private val writes = Mutex()
+    private var selectionRevision = 0L
 
     init {
         viewModelScope.launch {
-            themeStore.themeMode.collect { mode -> _themeMode.value = mode }
+            val storedMode = themeStore.themeMode.first()
+            if (selectionRevision == 0L) _themeMode.value = storedMode
         }
     }
 
     fun setThemeMode(mode: ThemeMode) {
+        val revision = ++selectionRevision
         _themeMode.value = mode
         _persistenceFailed.value = false
         viewModelScope.launch {
-            _persistenceFailed.value = !themeStore.save(mode)
+            writes.withLock {
+                val saved = themeStore.save(mode)
+                if (revision == selectionRevision) _persistenceFailed.value = !saved
+            }
         }
     }
 }

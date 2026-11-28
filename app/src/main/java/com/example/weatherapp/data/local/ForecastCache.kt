@@ -45,6 +45,12 @@ interface ForecastCacheDao {
     @Query("DELETE FROM forecast_cache WHERE location_id = :locationId")
     suspend fun delete(locationId: String)
 
+    @Query(
+        "DELETE FROM forecast_cache WHERE location_id = :locationId " +
+            "AND fetched_at_epoch_milli = :fetchedAt AND payload_json = :payloadJson",
+    )
+    suspend fun deleteIfUnchanged(locationId: String, fetchedAt: Long, payloadJson: String)
+
     @Query("DELETE FROM forecast_cache WHERE location_id IN (:locationIds)")
     suspend fun deleteAll(locationIds: List<String>)
 
@@ -68,6 +74,7 @@ interface ForecastCacheStore {
     suspend fun find(locationId: String): CachedForecast?
     suspend fun save(locationId: String, fetchedAt: Instant, payloadJson: String)
     suspend fun delete(locationId: String)
+    suspend fun deleteIfUnchanged(entry: CachedForecast)
 
     /** Every location id that currently has a cached forecast. */
     suspend fun locationIds(): List<String>
@@ -99,6 +106,10 @@ class RoomForecastCacheStore(private val dao: ForecastCacheDao) : ForecastCacheS
 
     override suspend fun delete(locationId: String) {
         dao.delete(locationId)
+    }
+
+    override suspend fun deleteIfUnchanged(entry: CachedForecast) {
+        dao.deleteIfUnchanged(entry.locationId, entry.fetchedAt.toEpochMilli(), entry.payloadJson)
     }
 
     override suspend fun locationIds(): List<String> = dao.locationIds()

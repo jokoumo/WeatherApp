@@ -54,24 +54,14 @@ object WeatherFormatter {
     fun temperatureValue(celsius: Double?): String =
         if (celsius == null) MISSING else integerFormat.format(round(celsius))
 
-    /**
-     * Temperature range of a period, for example "7–12 °C".
-     *
-     * A range is only printed when both ends are known and differ once rounded, because "7–7 °C"
-     * would claim a spread that the data does not report. With a single known value that value is
-     * printed alone, and with nothing known the placeholder stays.
-     */
+    /** Two reported extrema share one unit. A single reported value is printed on its own. */
     fun temperatureRange(minCelsius: Double?, maxCelsius: Double?): String {
         if (minCelsius == null && maxCelsius == null) return MISSING
         if (minCelsius == null) return temperature(maxCelsius)
         if (maxCelsius == null) return temperature(minCelsius)
         val lower = minOf(minCelsius, maxCelsius)
         val upper = maxOf(minCelsius, maxCelsius)
-        if (round(lower) == round(upper)) return temperature(lower)
-        // A range that ends below zero would otherwise read as a row of similar dashes
-        // ("-2–-1 °C"), so the separator gets space around it exactly where it is needed.
-        val separator = if (round(upper) < 0) " \u2013 " else "\u2013"
-        return temperatureValue(lower) + separator + temperature(upper)
+        return temperatureValue(lower) + "/" + temperature(upper)
     }
 
     /** Precipitation amount, one decimal for small amounts, for example "1,4 mm". */
@@ -149,7 +139,7 @@ object WeatherFormatter {
 
     /** Duration in seconds rendered as "6 h 12 min"; null stays empty. */
     fun duration(seconds: Long?): String {
-        if (seconds == null || seconds <= 0) return MISSING
+        if (seconds == null || seconds < 0) return MISSING
         val hours = seconds / 3600
         val minutes = (seconds % 3600) / 60
         return when {
@@ -163,10 +153,13 @@ object WeatherFormatter {
     fun relativeTime(fetchedAt: Instant, now: Instant): String {
         val age = Duration.between(fetchedAt, now).abs()
         val minutes = age.toMinutes()
+        val hours = age.toHours()
         return when {
             age.seconds < 60 -> "gerade eben"
+            minutes == 1L -> "vor 1 Minute"
             minutes < 60 -> "vor $minutes Minuten"
-            age.toHours() < 24 -> "vor ${age.toHours()} Stunden"
+            hours == 1L -> "vor 1 Stunde"
+            hours < 24 -> "vor $hours Stunden"
             age.toDays() == 1L -> "gestern"
             else -> "vor ${age.toDays()} Tagen"
         }

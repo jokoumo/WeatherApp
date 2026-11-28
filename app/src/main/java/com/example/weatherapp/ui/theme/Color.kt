@@ -26,6 +26,15 @@ val OnSurfaceDark = Color(0xFFE4EAF1)
 val OnSurfaceVariantDark = Color(0xFFB4C2CF)
 val OutlineDark = Color(0xFF3A4A58)
 
+/**
+ * Card behind one information tile of a home-screen widget. A widget sits on [SurfaceVariantLight]
+ * in the light scheme, so its tiles need to be one step *lighter* than the surface to stay readable
+ * against a bright wallpaper - the opposite direction from the app's own cards, which sit on a white
+ * background. The dark scheme uses [SurfaceVariantDark] for the tiles, the same step the app takes
+ * there, which is why only this one light value is new to the palette.
+ */
+val WidgetTileLight = Color(0xFFF7FBFF)
+
 /** Text colour used on top of the coloured header gradient. */
 val OnHeader = Color(0xFFFFFFFF)
 val OnHeaderMuted = Color(0xCCFFFFFF)

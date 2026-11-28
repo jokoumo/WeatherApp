@@ -121,32 +121,35 @@ class BackupConfigurationTest {
     }
 
     /**
-     * The saved locations must survive: no rule may hide the DataStore file that holds home
-     * location, favourites, ordering, selection and appearance.
+     * What the user configured has to survive: no rule may hide a DataStore file — neither the one
+     * holding home location, favourites, ordering, selection and appearance, nor the one holding the
+     * configurations of the home-screen widgets.
      */
     @Test
-    fun preferencesFileStaysInsideTheBackup() {
-        val preferencesFile = context.preferencesDataStoreFile(AppContainer.PREFERENCES_NAME)
-        val relativeToDataDir = preferencesFile.absolutePath
-            .removePrefix(context.dataDir.absolutePath + "/")
+    fun preferenceFilesStayInsideTheBackup() {
+        listOf(AppContainer.PREFERENCES_NAME, AppContainer.WIDGET_PREFERENCES_NAME)
+            .forEach { storeName ->
+                val preferencesFile = context.preferencesDataStoreFile(storeName)
+                val relativeToDataDir = preferencesFile.absolutePath
+                    .removePrefix(context.dataDir.absolutePath + "/")
 
-        assertEquals("files/datastore/$preferencesFileName", relativeToDataDir)
+                assertEquals("files/datastore/$storeName.preferences_pb", relativeToDataDir)
 
-        listOf(parseScheme(R.xml.backup_rules), parseScheme(R.xml.data_extraction_rules))
-            .forEach { scheme ->
-                scheme.excludes.forEach { rule ->
-                    val covered = when (rule.domain) {
-                        "file" -> relativeToDataDir.startsWith("files/" + rule.path)
-                        "root" -> relativeToDataDir.startsWith(rule.path.trimStart('/'))
-                        else -> false
+                listOf(parseScheme(R.xml.backup_rules), parseScheme(R.xml.data_extraction_rules))
+                    .forEach { scheme ->
+                        scheme.excludes.forEach { rule ->
+                            val covered = when (rule.domain) {
+                                "file" -> relativeToDataDir.startsWith("files/" + rule.path)
+                                "root" -> relativeToDataDir.startsWith(rule.path.trimStart('/'))
+                                else -> false
+                            }
+                            assertTrue(
+                                "the rule domain=${rule.domain} path=${rule.path} would drop " +
+                                    "the $storeName preferences",
+                                !covered,
+                            )
+                        }
                     }
-                    assertTrue(
-                        "the rule domain=${rule.domain} path=${rule.path} would drop the settings",
-                        !covered,
-                    )
-                }
             }
     }
-
-    private val preferencesFileName get() = "${AppContainer.PREFERENCES_NAME}.preferences_pb"
 }

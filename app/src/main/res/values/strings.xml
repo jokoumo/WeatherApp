@@ -25,7 +25,8 @@
     <string name="detail_day_length">Tageslänge</string>
     <string name="detail_temperature">Temperatur</string>
     <string name="feels_like_value">Gefühlt %1$s</string>
-    <string name="min_max_today">Min %1$s · Max %2$s</string>
+    <string name="min_max_today">Heute min/max: %1$s</string>
+    <string name="temperature_range_accessibility">Temperatur min/max: %1$s</string>
     <string name="hourly_details_title">Stundendetails</string>
     <string name="content_description_weather_icon">Wettersymbol</string>
 
@@ -144,6 +145,7 @@
     <string name="message_home_location_set">Hauptstandort aktualisiert.</string>
     <string name="message_home_location_protected">Der Hauptstandort ist immer gespeichert.</string>
     <string name="message_history_cleared">Verlauf gelöscht.</string>
+    <string name="message_location_save_failed">Die Ortsänderung konnte nicht gespeichert werden. Bitte versuche es erneut.</string>
 
     <!-- Navigation and settings -->
     <string name="action_settings">Einstellungen</string>
@@ -259,10 +261,50 @@
         <item>Verlauf der zuletzt angeschauten Orte</item>
         <item>ausgewählter Ort</item>
         <item>Darstellungsauswahl</item>
+        <item>Orte der Widgets auf dem Startbildschirm</item>
     </string-array>
     <string-array name="privacy_backup_excluded">
         <item>Wetterberichte samt Abrufzeitpunkt – lassen sich jederzeit neu abrufen</item>
         <item>die Datenbankdatei des Wetterzwischenspeichers mit ihren Journal- und WAL-Dateien</item>
         <item>Zwischenspeicher und Arbeitsdateien, die Android grundsätzlich nicht sichert</item>
     </string-array>
+
+    <!-- Home-screen widgets: names shown in the Android widget picker -->
+    <string name="widget_current_name">WetterPlus – Aktuelles Wetter</string>
+    <string name="widget_current_description">Aktuelles Wetter mit Detailwerten</string>
+    <string name="widget_day_period_name">WetterPlus – Tagesverlauf</string>
+    <string name="widget_day_period_description">Die nächsten vier Tagesabschnitte</string>
+    <string name="widget_three_day_name">WetterPlus – 3-Tage-Vorschau</string>
+    <string name="widget_three_day_description">Heute, morgen und übermorgen</string>
+
+    <!-- Home-screen widgets: text inside a widget -->
+    <string name="widget_day_today">Heute</string>
+    <!-- The age itself is phrased by WeatherFormatter.relativeTime ("vor 12 Minuten"), so the label only
+         introduces it; the stale variant adds the same warning the app shows for an old response. -->
+    <string name="widget_last_updated">Stand: %1$s</string>
+    <string name="widget_last_updated_stale">Gespeichert: %1$s</string>
+    <string name="widget_no_data">Derzeit sind keine Wetterdaten verfügbar.</string>
+    <string name="widget_no_location">Kein Ort eingestellt. Öffne WetterPlus und wähle dort den Ort dieses Widgets.</string>
+    <string name="widget_period_no_data">Keine Stundendaten</string>
+    <string name="widget_tile_today_range">Min / Max</string>
+    <string name="widget_tile_precipitation_probability">Regenw.</string>
+    <string name="widget_tile_humidity">Feuchte</string>
+
+    <!-- Widget configuration, shown when a widget is added -->
+    <string name="action_save">Speichern</string>
+    <string name="widget_configure_title">Widget einrichten</string>
+    <string name="widget_mode_home">Hauptstandort</string>
+    <string name="widget_mode_home_description">Zeigt immer den Hauptstandort der App.</string>
+    <string name="widget_mode_selected">Aktueller Ort</string>
+    <string name="widget_mode_selected_description">Zeigt den Ort, der gerade in der App ausgewählt ist.</string>
+    <string name="widget_mode_fixed">Fester Ort</string>
+    <string name="widget_mode_fixed_description">Zeigt immer diesen Ort – auch wenn er nicht mehr in der App gespeichert ist.</string>
+    <string name="widget_configure_stored_locations">Gespeicherte Orte</string>
+    <string name="widget_configure_fixed_selected">Ausgewählt: %1$s</string>
+    <string name="widget_configure_no_home">Lege zuerst in WetterPlus einen Hauptstandort fest oder wähle für das Widget einen festen Ort.</string>
+    <string name="widget_configure_no_selected">Wähle zuerst in WetterPlus einen Ort aus oder verwende für das Widget einen festen Ort.</string>
+    <string name="widget_configure_mode_unavailable">Derzeit nicht verfügbar</string>
+    <string name="widget_configure_no_fixed_location">Bitte wähle zuerst einen Ort aus.</string>
+    <string name="widget_configure_failed">Die Widget-Einstellung konnte nicht gespeichert werden.</string>
+    <string name="widget_configure_location_changed">Der gewählte Ort ist nicht mehr verfügbar. Bitte wähle einen Ort aus.</string>
 </resources>
