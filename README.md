@@ -5,6 +5,8 @@ weather data from [Open-Meteo](https://open-meteo.com/) for a configurable home 
 number of favourite locations and any place that was just looked at, caches responses locally,
 and works offline as long as a cached forecast exists.
 
+Created using Strata v0.2.22 with Qwen3.8-Flash-Next_IQ3_S (for first draft and groundwork using High/Max Reasoning) and OpenAI Codex with GPT-6.2 Sol (for fine-tuning and polishing using Medium Reasoning).
+
 The application is named **WetterPlus** everywhere the user sees it — launcher label, system
 application info and the dashboard toolbar — while the application ID and package name stay
 `com.example.weatherapp`, so an installed build updates in place instead of installing beside it.
