@@ -224,7 +224,7 @@ object CachePolicy {
      */
     fun hasHourlyCoverage(snapshot: WeatherSnapshot, now: Instant): Boolean {
         val last = snapshot.hourly.maxOfOrNull { it.instant } ?: return true
-        return !last.isBefore(now.truncatedTo(ChronoUnit.HOURS))
+        return last.plus(HOURLY_INTERVAL).isAfter(now)
     }
 }
 

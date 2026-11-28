@@ -28,6 +28,44 @@ class ForecastMapperTest {
     private val fetchedAt = Instant.parse("2026-11-22T11:00:00Z")
 
     @Test
+    fun `daily mapping retains real zero duration and drops a row without measurements`() {
+        val days = mapper.toDaily(
+            DailyDto(
+                time = listOf("2026-11-22", "2026-11-23"),
+                sunshineDuration = listOf(0.0, null),
+                daylightDuration = listOf(0.0, null),
+            ),
+            ZoneId.of("Europe/Berlin"),
+        )
+        assertEquals(1, days.size)
+        assertEquals(0L, days.single().sunshineSeconds)
+        assertEquals(0L, days.single().daylightSeconds)
+    }
+
+    @Test
+    fun `an overflowing API offset falls back to the location time zone`() {
+        val days = mapper.toDaily(
+            DailyDto(time = listOf("1795302000"), temperatureMin = listOf(0.0)),
+            ZoneId.of("Europe/Berlin"),
+            utcOffsetSeconds = 1L shl 32,
+        )
+        assertEquals(java.time.LocalDate.of(2026, 11, 22), days.single().date)
+    }
+
+    @Test
+    fun `geocoding rejects coordinates outside their physical bounds`() {
+        val locations = mapper.toLocations(
+            listOf(
+                geocoderResult(1, "Too far north", 91.0, 0.0),
+                geocoderResult(2, "Too far west", 0.0, -181.0),
+                geocoderResult(3, "Invalid", Double.NaN, 10.0),
+                geocoderResult(4, "Valid", 0.0, 180.0),
+            ),
+        )
+        assertEquals(listOf("4"), locations.map { it.id })
+    }
+
+    @Test
     fun `a complete payload maps to current hourly and daily domain models`() {
         val snapshot = mapper.toSnapshot(sampleForecastDto(), hamburg, fetchedAt)
 
@@ -251,7 +289,7 @@ class ForecastMapperTest {
     }
 
     @Test
-    fun `daily values that are zero or missing stay null`() {
+    fun `daily rows distinguish zero duration from a missing value`() {
         val daily = mapper.toDaily(
             DailyDto(
                 time = listOf("2026-11-22", "kaputt", "2026-11-23"),
@@ -262,7 +300,7 @@ class ForecastMapperTest {
         )
         assertEquals(2, daily.size)
         assertNull(daily[0].maxTemperatureCelsius)
-        assertNull(daily[0].sunshineSeconds)
+        assertEquals(0L, daily[0].sunshineSeconds)
         assertNull(daily[0].daylightSeconds)
         assertEquals(200L, daily[1].sunshineSeconds)
     }

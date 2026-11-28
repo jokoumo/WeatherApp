@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sample content is used only by the Android widget picker. -->
+    <string name="widget_preview_partly_cloudy" formatted="false">Teilweise bewölkt</string>
+    <string name="widget_preview_rain" formatted="false">Regen</string>
+    <string name="widget_preview_overcast" formatted="false">Bedeckt</string>
+    <string name="widget_preview_temperature" formatted="false">12 °C</string>
+    <string name="widget_preview_humidity" formatted="false">68 %</string>
+    <string name="widget_preview_wind" formatted="false">14 km/h</string>
+    <string name="widget_preview_afternoon_range" formatted="false">7/14 °C</string>
+    <string name="widget_preview_rain_probability" formatted="false">20 %</string>
+    <string name="widget_preview_location" formatted="false">Berlin</string>
+    <string name="widget_preview_updated" formatted="false">Beispiel · vor 5 Minuten</string>
+    <string name="widget_preview_morning_range" formatted="false">7/12 °C</string>
+    <string name="widget_preview_morning_time" formatted="false">Heute · 06–12 Uhr</string>
+    <string name="widget_preview_morning_precipitation" formatted="false">0 % · 0 mm</string>
+    <string name="widget_preview_afternoon_time" formatted="false">Heute · 12–18 Uhr</string>
+    <string name="widget_preview_afternoon_precipitation" formatted="false">20 % · 0 mm</string>
+    <string name="widget_preview_evening_range" formatted="false">8/11 °C</string>
+    <string name="widget_preview_evening_time" formatted="false">Heute · 18–22 Uhr</string>
+    <string name="widget_preview_evening_precipitation" formatted="false">65 % · 1,2 mm</string>
+    <string name="widget_preview_night_range" formatted="false">5/8 °C</string>
+    <string name="widget_preview_night_time" formatted="false">Heute · 22–06 Uhr</string>
+    <string name="widget_preview_night_precipitation" formatted="false">10 % · 0 mm</string>
+    <string name="widget_preview_today_date" formatted="false">28.11.</string>
+    <string name="widget_preview_tomorrow_date" formatted="false">29.11.</string>
+    <string name="widget_preview_day_after_date" formatted="false">30.11.</string>
+</resources>

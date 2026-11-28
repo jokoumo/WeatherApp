@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="WidgetPreview">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/widget_preview_text</item>
+    </style>
+    <style name="WidgetPreview.body" />
+    <style name="WidgetPreview.bold">
+        <item name="android:textStyle">bold</item>
+    </style>
+    <style name="WidgetPreview.title" parent="WidgetPreview.bold">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/widget_preview_accent</item>
+    </style>
+    <style name="WidgetPreview.temperature" parent="WidgetPreview.bold">
+        <item name="android:textSize">34sp</item>
+    </style>
+    <style name="WidgetPreview.muted">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/widget_preview_muted</item>
+    </style>
+</resources>

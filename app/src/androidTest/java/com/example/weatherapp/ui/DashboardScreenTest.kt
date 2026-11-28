@@ -3,6 +3,7 @@ package com.example.weatherapp.ui
 import android.view.KeyEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
@@ -585,6 +586,22 @@ class DashboardScreenTest {
         composeRule
             .onAllNodesWithText(context.getString(R.string.day_period_precipitation_probability))
             .assertCountEquals(4)
+    }
+
+    @Test
+    fun changingTheLocationClosesThePreviousLocationsForecastSheet() {
+        val state = mutableStateOf(stateWith())
+        composeRule.setContent {
+            WeatherAppTheme {
+                DashboardScreen(state.value, {}, {}, {}, {}, {})
+            }
+        }
+        openDailySheet(1)
+        composeRule.onNodeWithText(context.getString(R.string.day_details_title)).assertIsDisplayed()
+        composeRule.runOnIdle {
+            state.value = state.value.copy(weather = state.value.weather.copy(location = berlin))
+        }
+        composeRule.onNodeWithText(context.getString(R.string.day_details_title)).assertDoesNotExist()
     }
 
     @Test

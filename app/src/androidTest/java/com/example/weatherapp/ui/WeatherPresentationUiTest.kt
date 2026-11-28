@@ -4,12 +4,16 @@ import android.content.res.Configuration
 import android.content.res.XmlResourceParser
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
@@ -21,6 +25,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -348,6 +355,29 @@ class WeatherPresentationUiTest {
     }
 
     @Test
+    fun longNegativeRangeFitsANarrowOutlookAtIncreasedFontScale() {
+        val cold = day(4).copy(minTemperatureCelsius = -24.0, maxTemperatureCelsius = -12.0)
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 1.5f)) {
+                WeatherAppTheme(darkTheme = true) {
+                    ExtendedDayList(listOf(cold), modifier = Modifier.width(245.dp))
+                }
+            }
+        }
+        val layout = mutableListOf<TextLayoutResult>()
+        composeRule.onNodeWithText("-24/-12\u00A0°C").assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
+        val range = layout.single()
+        assertTrue(
+            "The full range must fit in ${range.size}. Width overflow ${range.didOverflowWidth}, height overflow ${range.didOverflowHeight}.",
+            !range.hasVisualOverflow,
+        )
+        composeRule.onNodeWithText(WeatherFormatter.percent(30) + " · " + WeatherFormatter.millimetres(1.2))
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun compactForecastRowsShowNumbersAndIconsButNoWrittenConditions() {
         val days = listOf(day(4), day(5))
         composeRule.setContent {
@@ -360,10 +390,11 @@ class WeatherPresentationUiTest {
         composeRule.onAllNodesWithText(precipitation).assertCountEquals(days.size)
         composeRule.onAllNodesWithText(precipitation).onFirst().assertIsDisplayed()
 
-        // Both temperatures stay as numbers, and they are bigger than a label.
-        composeRule.onAllNodesWithText(WeatherFormatter.temperatureValue(-1.0) + "°")
-            .assertCountEquals(days.size)
-        composeRule.onAllNodesWithText(WeatherFormatter.temperatureValue(6.0) + "°")
+        val range = "-1/6\u00A0°C"
+        composeRule.onAllNodesWithText(range).assertCountEquals(days.size)
+        composeRule.onAllNodesWithContentDescription(
+            context.getString(R.string.temperature_range_accessibility, range),
+        )
             .assertCountEquals(days.size)
         composeRule.onNodeWithText(WeatherFormatter.weekday(days.first().date)).assertIsDisplayed()
         composeRule.onNodeWithText(WeatherFormatter.shortDate(days.first().date)).assertIsDisplayed()

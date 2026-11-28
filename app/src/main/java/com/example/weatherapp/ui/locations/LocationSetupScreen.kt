@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.example.weatherapp.R
 import com.example.weatherapp.domain.model.SavedLocation
 import com.example.weatherapp.ui.SearchUiState
+import com.example.weatherapp.ui.components.InfoNote
 
 /**
  * Shown on the first start, or whenever no location is stored any more. The user searches a
@@ -32,6 +33,7 @@ fun LocationSetupScreen(
     search: SearchUiState,
     onQueryChange: (String) -> Unit,
     onLocationChosen: (SavedLocation) -> Unit,
+    locationSaveFailed: Boolean = false,
 ) {
     Scaffold { contentPadding ->
         Column(
@@ -64,6 +66,9 @@ fun LocationSetupScreen(
             Spacer(Modifier.height(20.dp))
             LocationSearchField(query = search.query, onQueryChange = onQueryChange)
             Spacer(Modifier.height(16.dp))
+            if (locationSaveFailed) {
+                InfoNote(text = stringResource(R.string.message_location_save_failed))
+            }
             LocationSearchResults(
                 search = search,
                 onItemClick = onLocationChosen,

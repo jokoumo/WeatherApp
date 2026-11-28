@@ -23,6 +23,11 @@ import com.example.weatherapp.data.repository.LocationRepository
 import com.example.weatherapp.data.repository.WeatherRepository
 import com.example.weatherapp.ui.MainViewModel
 import com.example.weatherapp.ui.settings.AppearanceViewModel
+import com.example.weatherapp.widget.DataStoreWidgetConfigStore
+import com.example.weatherapp.widget.WidgetConfigRepository
+import com.example.weatherapp.widget.WidgetConfigStore
+import com.example.weatherapp.widget.WidgetDataProvider
+import com.example.weatherapp.widget.WidgetRefreshCoordinator
 import okhttp3.OkHttpClient
 import androidx.room.Room
 
@@ -33,6 +38,9 @@ import androidx.room.Room
  * graph here keeps it explicit and keeps every class testable through its constructor.
  */
 class AppContainer(private val context: Context) {
+
+    /** Application context, so the widget layer can schedule work without holding an activity. */
+    val applicationContext: Context = context.applicationContext
 
     private val httpClient: OkHttpClient by lazy { NetworkModule.createHttpClient() }
 
@@ -92,12 +100,43 @@ class AppContainer(private val context: Context) {
         WeatherRepository(forecastApi, forecastCacheStore, forecastMapper)
     }
 
+    /**
+     * Second DataStore file, for the widget configurations. It has to be a separate instance because
+     * the widget ids change as often as the user rearranges their home screen, and a repair of that
+     * file must never touch the saved locations. One instance per file still holds: the settings store
+     * and the theme store share the first file, the widget store owns this one.
+     */
+    private val widgetPreferencesDataStore: DataStore<Preferences> by lazy {
+        PreferenceDataStoreFactory.create(
+            produceFile = { context.applicationContext.preferencesDataStoreFile(WIDGET_PREFERENCES_NAME) },
+        )
+    }
+
+    val widgetConfigStore: WidgetConfigStore by lazy {
+        DataStoreWidgetConfigStore(widgetPreferencesDataStore, NetworkModule.json)
+    }
+
+    val widgetConfigRepository: WidgetConfigRepository by lazy {
+        WidgetConfigRepository(widgetConfigStore)
+    }
+
+    val widgetDataProvider: WidgetDataProvider by lazy {
+        WidgetDataProvider(locationRepository, weatherRepository, widgetConfigRepository)
+    }
+
+    /** Scheduling and redrawing of the widgets, shared by every entry point that triggers a refresh. */
+    val widgetRefreshCoordinator: WidgetRefreshCoordinator by lazy {
+        WidgetRefreshCoordinator(this)
+    }
+
     val mainViewModelFactory: ViewModelProvider.Factory by lazy {
         viewModelFactory {
             initializer {
                 MainViewModel(
                     locationRepository = locationRepository,
                     weatherRepository = weatherRepository,
+                    widgetRetainedLocationIds = { widgetConfigRepository.fixedLocationIds() },
+                    widgetUpdateRequested = { widgetRefreshCoordinator.requestWidgetUpdate() },
                 )
             }
         }
@@ -111,5 +150,6 @@ class AppContainer(private val context: Context) {
     internal companion object {
         const val DATABASE_NAME = "weather-cache"
         const val PREFERENCES_NAME = "weather-settings"
+        const val WIDGET_PREFERENCES_NAME = "widget-configurations"
     }
 }

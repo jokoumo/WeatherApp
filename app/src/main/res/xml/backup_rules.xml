@@ -11,6 +11,12 @@
     What lives in the app data directory (verified on a running device):
       files/datastore/weather-settings.preferences_pb  home location, favourites, ordering,
                                                        selected location, appearance  -> backed up
+      files/datastore/widget-configurations.preferences_pb
+                                                       one record per home-screen widget: its id, its
+                                                       location mode, a pinned place  -> backed up
+      files/datastore/GlanceAppWidgetManager-*.preferences_pb, files/datastore/appWidgetLayout-*
+                                                       Glance's own per-widget layout state, no user
+                                                       data, rebuilt on the next update   -> backed up
       databases/weather-cache (+ -wal, -shm, -journal) Room cache of the forecast responses
                                                        -> excluded, can be requested again
       cache/, code_cache/                              SQLite lock file, JIT caches

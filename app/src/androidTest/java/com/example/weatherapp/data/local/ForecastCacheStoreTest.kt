@@ -73,6 +73,20 @@ class ForecastCacheStoreTest {
     }
 
     @Test
+    fun rejectedCacheReadCannotDeleteAReplacementAtTheSameTimestamp() = runBlocking {
+        val fetchedAt = Instant.parse("2026-11-22T11:00:00Z")
+        store.save("2911298", fetchedAt, "unusable payload")
+        val unusable = requireNotNull(store.find("2911298"))
+        store.save("2911298", fetchedAt, "replacement")
+
+        store.deleteIfUnchanged(unusable)
+
+        assertEquals("replacement", store.find("2911298")?.payloadJson)
+        store.deleteIfUnchanged(requireNotNull(store.find("2911298")))
+        assertNull(store.find("2911298"))
+    }
+
+    @Test
     fun deletingOneLocationKeepsTheOthers() = runBlocking {
         val fetchedAt = Instant.parse("2026-11-22T11:00:00Z")
         store.save("2911298", fetchedAt, "hamburg")

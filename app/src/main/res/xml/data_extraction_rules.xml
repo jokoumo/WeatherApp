@@ -9,7 +9,11 @@
       - Keep what the user created: home location, favourites with their order, the selected
         location and the appearance choice. They live in
         files/datastore/weather-settings.preferences_pb and are covered by the default rule "back
-        up the app data directory", so they are deliberately not listed here.
+        up the app data directory", so they are deliberately not listed here. The same is true for
+        files/datastore/widget-configurations.preferences_pb, which holds one record per home-screen
+        widget (its id, its location mode and, for a pinned widget, the whole place). Glance's own
+        layout state in files/datastore/GlanceAppWidgetManager-* and appWidgetLayout-* contains no
+        user data and is rebuilt on the next update, so it is left alone as well.
       - Leave out what can be reconstructed: the Room forecast cache (databases/weather-cache and
         its -wal, -shm and -journal side files) only holds copies of answers the weather service
         sends again on request, including their timestamps.

@@ -25,6 +25,78 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+            Widget configuration. The launcher opens it when a widget is added and only places the
+            widget when this activity answers with RESULT_OK, so a widget never exists without the
+            location its user chose. It is exported because the launcher, not this app, starts it.
+        -->
+        <activity
+            android:name=".widget.WidgetConfigurationActivity"
+            android:exported="true"
+            android:label="@string/widget_configure_title"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.WeatherApp">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            The three home-screen widgets. Glance composes their content, and the App Widget framework
+            delivers the update broadcasts itself, so these receivers stay unexported and the app still
+            needs no permission beyond INTERNET. updatePeriodMillis is 0 in every provider file:
+            WorkManager does the refreshing, on the app's own cache policy.
+        -->
+        <receiver
+            android:name=".widget.CurrentWeatherWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_current_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_current_weather" />
+        </receiver>
+        <receiver
+            android:name=".widget.DayPeriodWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_day_period_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_day_period" />
+        </receiver>
+        <receiver
+            android:name=".widget.ThreeDayWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_three_day_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_three_day" />
+        </receiver>
+
+        <!--
+            Redraws the widgets when the local date, the clock or the time zone changes, and after an
+            update of this app. All four are protected system broadcasts, so no permission is needed
+            and the receiver stays unexported.
+        -->
+        <receiver
+            android:name=".widget.WidgetSystemEventReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
